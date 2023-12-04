@@ -1,2 +1,2 @@
 # OpenEnergyID
-Open Source energy data analytics and simulations
+Open Source Python library for energy data analytics and simulations
