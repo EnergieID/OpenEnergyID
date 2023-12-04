@@ -16,8 +16,13 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: chartboost/ruff-action@v1
 
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -33,7 +38,6 @@ jobs:
     - name: Build package
       run: python -m build
     - name: Publish package
-      uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
-      environment: release
+      uses: pypa/gh-action-pypi-publish@release/v1
       permissions:
         id-token: write
