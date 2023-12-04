@@ -31,7 +31,9 @@ classifiers = [
 ]
 
 [project.urls]
-homepage = "www.energyid.eu"
+Homepage = "https://energyid.eu"
+Repository = "https://github.com/EnergieID/OpenEnergyID"
+"Bugs Tracker" = "https://github.com/EnergieID/OpenEnergyID/issues"
 
 [tool.hatch.version]
 path = "openenergyid/__init__.py"
