@@ -17,7 +17,7 @@ readme = "README.md"
 license = {file = "LICENSE"}
 keywords = ["energy", "analytics", "simulation"]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -37,3 +37,6 @@ Repository = "https://github.com/EnergieID/OpenEnergyID"
 
 [tool.hatch.version]
 path = "openenergyid/__init__.py"
+
+[tool.ruff]
+line-length = 100
