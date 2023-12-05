@@ -1,7 +1,7 @@
 """Models for multivariable linear regression."""
-from pydantic import BaseModel
 from typing import Optional
 
+from pydantic import BaseModel
 import statsmodels.formula.api as fm
 
 from openenergyid.enums import Granularity
