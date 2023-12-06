@@ -10,6 +10,14 @@ from openenergyid.models import TimeSeries
 from .mvlr import MultiVariableLinearRegression
 
 
+class ConfidenceInterval(BaseModel):
+    """Confidence interval for a coefficient."""
+
+    confidence: float
+    lower: float
+    upper: float
+
+
 class IndependentVariable(BaseModel):
     """Independent variable for a multivariable linear regression model."""
 
@@ -18,7 +26,7 @@ class IndependentVariable(BaseModel):
     t_stat: Optional[float] = None
     p_value: Optional[float] = None
     std_err: Optional[float] = None
-    confidence_interval: Optional[dict[str, float]] = None
+    confidence_interval: Optional[ConfidenceInterval] = None
 
     @classmethod
     def from_fit(cls, fit: fm.ols, name: str) -> "IndependentVariable":
@@ -29,11 +37,11 @@ class IndependentVariable(BaseModel):
             t_stat=fit.tvalues[name],
             p_value=fit.pvalues[name],
             std_err=fit.bse[name],
-            confidence_interval={
-                "confidence": 0.95,
-                "lower": fit.conf_int().transpose()[name][0],
-                "upper": fit.conf_int().transpose()[name][1],
-            },
+            confidence_interval=ConfidenceInterval(
+                confidence=0.95,
+                lower=fit.conf_int().transpose()[name][0],
+                upper=fit.conf_int().transpose()[name][1],
+            ),
         )
 
 

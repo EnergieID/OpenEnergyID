@@ -3,6 +3,7 @@ and Ordinary Least Squares (ols)."""
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, Field
 import statsmodels.formula.api as fm
 from patsy import LookupFactor, ModelDesc, Term  # pylint: disable=no-name-in-module
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
@@ -10,6 +11,20 @@ from statsmodels.sandbox.regression.predstd import wls_prediction_std
 from openenergyid.enums import Granularity
 
 from .helpers import resample_input_data
+
+
+class ValidationParameters(BaseModel):
+    """Parameters for validation of a multivariable linear regression model."""
+
+    rsquared: float = Field(
+        0.75, ge=0, le=1, description="Minimum acceptable value for the adjusted R-squared"
+    )
+    f_pvalue: float = Field(
+        0.05, ge=0, le=1, description="Maximum acceptable value for the F-statistic"
+    )
+    pvalues: float = Field(
+        0.05, ge=0, le=1, description="Maximum acceptable value for the p-values of the t-statistic"
+    )
 
 
 class MultiVariableLinearRegression:
@@ -41,7 +56,7 @@ class MultiVariableLinearRegression:
         confint: float = 0.95,
         cross_validation: bool = False,
         allow_negative_predictions: bool = False,
-        validation_params: dict = None,
+        validation_params: ValidationParameters = None,
         granularity: Granularity = None,
     ):
         """Parameters
@@ -65,15 +80,8 @@ class MultiVariableLinearRegression:
             If True, allow predictions to be negative.
             For gas consumption or PV production, this is not physical
             so allow_negative_predictions should be False
-        validation_params : dict, default=None
-            Dictionary with parameters to validate the model.
-            The following parameters are supported:
-            - "rsquared": float, default=0.75
-                Minimum acceptable value for the adjusted R-squared
-            - "f_pvalue": float, default=0.05
-                Maximum acceptable value for the F-statistic
-            - "pvalues": float, default=0.05
-                Maximum acceptable value for the p-values of the t-statistic
+        validation_params : ValidationParameters, default=None
+            Parameters to validate the model.
         """
         self.data = data.copy()
         if y not in self.data.columns:
@@ -87,7 +95,7 @@ class MultiVariableLinearRegression:
         self.confint = confint
         self.cross_validation = cross_validation
         self.allow_negative_predictions = allow_negative_predictions
-        self.validation_params = validation_params or {}
+        self.validation_params = validation_params or ValidationParameters()
         self.granularity = granularity
         self._fit = None
         self._list_of_fits = []
@@ -400,16 +408,16 @@ class MultiVariableLinearRegression:
         -------
             bool: True if the model is valid, False otherwise.
         """
-        if self.fit.rsquared_adj < self.validation_params.get("rsquared", 0.75):
+        if self.fit.rsquared_adj < self.validation_params.rsquared:
             return False
 
-        if self.fit.f_pvalue > self.validation_params.get("f_pvalue", 0.05):
+        if self.fit.f_pvalue > self.validation_params.f_pvalue:
             return False
 
         param_keys = self.fit.pvalues.keys().tolist()
         param_keys.remove("Intercept")
         for k in param_keys:
-            if self.fit.pvalues[k] > self.validation_params.get("pvalues", 0.05):
+            if self.fit.pvalues[k] > self.validation_params.pvalues:
                 return False
 
         return True
