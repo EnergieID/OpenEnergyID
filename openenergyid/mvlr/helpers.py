@@ -28,3 +28,20 @@ def resample_input_data(
     return data.resample(rule=pandas_granularity_map[granularity]).agg(
         aggregation_methods,
     )
+
+
+def temperature_equivalent_to_degree_days(
+    temperature_equivalent: pd.Series, base_temperature: float, cooling: bool = False
+) -> pd.Series:
+    """
+    Convert temperature equivalent to degree days.
+
+    Use cooling=True to convert cooling degree days.
+    """
+
+    if cooling:
+        result = temperature_equivalent - base_temperature
+    else:
+        result = base_temperature - temperature_equivalent
+
+    return result.clip(lower=0)

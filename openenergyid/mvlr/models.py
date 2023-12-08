@@ -1,7 +1,7 @@
 """Models for multivariable linear regression."""
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 import statsmodels.formula.api as fm
 
 from openenergyid.enums import Granularity
@@ -13,9 +13,9 @@ from .mvlr import MultiVariableLinearRegression
 class ConfidenceInterval(BaseModel):
     """Confidence interval for a coefficient."""
 
-    confidence: float
-    lower: float
-    upper: float
+    confidence: float = Field(ge=0, le=1)
+    lower: float = Field(ge=0, le=1)
+    upper: float = Field(ge=0, le=1)
 
 
 class IndependentVariable(BaseModel):
@@ -23,10 +23,14 @@ class IndependentVariable(BaseModel):
 
     name: str
     coef: float
-    t_stat: Optional[float] = None
-    p_value: Optional[float] = None
-    std_err: Optional[float] = None
-    confidence_interval: Optional[ConfidenceInterval] = None
+    t_stat: Optional[float] = Field(ge=0, le=1, default=None, alias="tStat")
+    p_value: Optional[float] = Field(ge=0, le=1, default=None, alias="pValue")
+    std_err: Optional[float] = Field(ge=0, le=1, default=None, alias="stdErr")
+    confidence_interval: Optional[ConfidenceInterval] = Field(
+        default=None, alias="confidenceInterval"
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
 
     @classmethod
     def from_fit(cls, fit: fm.ols, name: str) -> "IndependentVariable":
@@ -48,12 +52,12 @@ class IndependentVariable(BaseModel):
 class MultiVariableRegressionResult(BaseModel):
     """Result of a multivariable regression model."""
 
-    dependent_variable: str
-    independent_variables: list[IndependentVariable]
-    r2: float
-    r2_adj: float
-    f_stat: float
-    prob_f_stat: float
+    dependent_variable: str = Field(alias="dependentVariable")
+    independent_variables: list[IndependentVariable] = Field(alias="independentVariables")
+    r2: float = Field(ge=0, le=1, alias="rSquared")
+    r2_adj: float = Field(ge=0, le=1, alias="rSquaredAdjusted")
+    f_stat: float = Field(ge=0, alias="fStat")
+    prob_f_stat: float = Field(ge=0, le=1, alias="probFStat")
     intercept: IndependentVariable
     granularity: Granularity
     frame: TimeSeries
