@@ -23,9 +23,9 @@ class IndependentVariable(BaseModel):
 
     name: str
     coef: float
-    t_stat: Optional[float] = Field(ge=0, le=1, default=None, alias="tStat")
+    t_stat: Optional[float] = Field(default=None, alias="tStat")
     p_value: Optional[float] = Field(ge=0, le=1, default=None, alias="pValue")
-    std_err: Optional[float] = Field(ge=0, le=1, default=None, alias="stdErr")
+    std_err: Optional[float] = Field(default=None, alias="stdErr")
     confidence_interval: Optional[ConfidenceInterval] = Field(
         default=None, alias="confidenceInterval"
     )
