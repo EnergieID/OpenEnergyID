@@ -14,8 +14,8 @@ class ConfidenceInterval(BaseModel):
     """Confidence interval for a coefficient."""
 
     confidence: float = Field(ge=0, le=1)
-    lower: float = Field(ge=0, le=1)
-    upper: float = Field(ge=0, le=1)
+    lower: float
+    upper: float
 
 
 class IndependentVariable(BaseModel):
