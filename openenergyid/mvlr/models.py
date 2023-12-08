@@ -62,6 +62,8 @@ class MultiVariableRegressionResult(BaseModel):
     granularity: Granularity
     frame: TimeSeries
 
+    model_config = ConfigDict(populate_by_name=True)
+
     @classmethod
     def from_mvlr(cls, mvlr: MultiVariableLinearRegression) -> "MultiVariableRegressionResult":
         """Create a MultiVariableRegressionResult from a MultiVariableLinearRegression."""
