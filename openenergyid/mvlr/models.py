@@ -1,5 +1,6 @@
 """Models for multivariable linear regression."""
-from typing import Optional
+from typing import Any, List, Optional
+import pandas as pd
 
 from pydantic import BaseModel, Field, ConfigDict
 import statsmodels.formula.api as fm
@@ -10,6 +11,118 @@ from openenergyid.models import TimeSeries
 from .mvlr import MultiVariableLinearRegression
 
 
+COLUMN_TEMPERATUREEQUIVALENT = "temperatureEquivalent"
+
+
+######################
+# MVLR Input Models #
+######################
+
+
+class ValidationParameters(BaseModel):
+    """Parameters for validation of a multivariable linear regression model."""
+
+    rsquared: float = Field(
+        0.75, ge=0, le=1, description="Minimum acceptable value for the adjusted R-squared"
+    )
+    f_pvalue: float = Field(
+        0.05, ge=0, le=1, description="Maximum acceptable value for the F-statistic"
+    )
+    pvalues: float = Field(
+        0.05, ge=0, le=1, description="Maximum acceptable value for the p-values of the t-statistic"
+    )
+
+
+class IndependentVariableInput(BaseModel):
+    """
+    Independent variable.
+
+    Has to corresponds to a column in the data frame.
+    """
+
+    name: str = Field(
+        description="Name of the independent variable. "
+        "If the name is `temperatureEquivalent`, "
+        "it will be unpacked into columns according to the variants."
+    )
+    variants: Optional[list[str]] = Field(
+        default=None,
+        description="Variants of the `temperatureEquivalent` independent variable. "
+        "Eg. `HDD_16.5` will be Heating Degree Days with a base temperature of 16.5°C, "
+        "`CDD_0` will be Cooling Degree Days with a base temperature of 0°C.",
+    )
+
+
+class MultiVariableRegressionInput(BaseModel):
+    """Multi-variable regression input."""
+
+    timezone: str = Field(alias="timeZone")
+    independent_variables: List[IndependentVariableInput] = Field(
+        alias="independentVariables", min_length=1
+    )
+    dependent_variable: str = Field(alias="dependentVariable")
+    frame: TimeSeries
+    granularities: list[Granularity]
+    allow_negative_predictions: bool = Field(alias="allowNegativePredictions", default=False)
+    validation_parameters: ValidationParameters = Field(
+        alias="validationParameters", default=ValidationParameters()
+    )
+
+    def model_post_init(self, __context: Any) -> None:
+        """Post init hook."""
+        # Check if all independent variables are present in the data frame
+        for iv in self.independent_variables:  # pylint: disable=not-an-iterable
+            if iv.name not in self.frame.columns:
+                raise ValueError(f"Independent variable {iv.name} not found in the data frame.")
+
+        return super().model_post_init(__context)
+
+    def _data_frame(self) -> pd.DataFrame:
+        """Convert the data to a pandas DataFrame."""
+        return self.frame.to_pandas(timezone=self.timezone)
+
+    def data_frame(self) -> pd.DataFrame:
+        """
+        Return the data frame ready for analysis.
+
+        Unpacks degree days and removes unnecessary columns.
+
+        If an independent variable named `temperatureEquivalent` is present,
+        it will be unpacked into columns according to the variants.
+        Eg. Variant "HDD_16.5" will be Heating Degree Days
+        with a base temperature of 16.5°C,
+        "CDD_0" will be Cooling Degree Days with a base temperature of 0°C.
+        """
+        frame = self._data_frame()
+        columns_to_retain = [self.dependent_variable]
+        for iv in self.independent_variables:  # pylint: disable=not-an-iterable
+            if iv.name == COLUMN_TEMPERATUREEQUIVALENT and iv.variants is not None:
+                for variant in iv.variants:
+                    prefix, base_temperature = variant.split("_")
+                    if prefix == "CDD":
+                        frame[variant] = frame[COLUMN_TEMPERATUREEQUIVALENT] - float(
+                            base_temperature
+                        )
+                    else:
+                        frame[variant] = (
+                            float(base_temperature) - frame[COLUMN_TEMPERATUREEQUIVALENT]
+                        )
+                    frame[variant] = frame[variant].clip(lower=0)
+                    columns_to_retain.append(variant)
+                frame.drop(columns=[COLUMN_TEMPERATUREEQUIVALENT], inplace=True)
+            else:
+                columns_to_retain.append(iv.name)
+
+        frame = frame[columns_to_retain].copy()
+
+        return frame
+
+
+######################
+# MVLR Result Models #
+######################
+
+
 class ConfidenceInterval(BaseModel):
     """Confidence interval for a coefficient."""
 
@@ -18,7 +131,7 @@ class ConfidenceInterval(BaseModel):
     upper: float
 
 
-class IndependentVariable(BaseModel):
+class IndependentVariableResult(BaseModel):
     """Independent variable for a multivariable linear regression model."""
 
     name: str
@@ -33,7 +146,7 @@ class IndependentVariable(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     @classmethod
-    def from_fit(cls, fit: fm.ols, name: str) -> "IndependentVariable":
+    def from_fit(cls, fit: fm.ols, name: str) -> "IndependentVariableResult":
         """Create an IndependentVariable from a fit."""
         return cls(
             name=name,
@@ -53,12 +166,12 @@ class MultiVariableRegressionResult(BaseModel):
     """Result of a multivariable regression model."""
 
     dependent_variable: str = Field(alias="dependentVariable")
-    independent_variables: list[IndependentVariable] = Field(alias="independentVariables")
+    independent_variables: list[IndependentVariableResult] = Field(alias="independentVariables")
     r2: float = Field(ge=0, le=1, alias="rSquared")
     r2_adj: float = Field(ge=0, le=1, alias="rSquaredAdjusted")
     f_stat: float = Field(ge=0, alias="fStat")
     prob_f_stat: float = Field(ge=0, le=1, alias="probFStat")
-    intercept: IndependentVariable
+    intercept: IndependentVariableResult
     granularity: Granularity
     frame: TimeSeries
 
@@ -73,7 +186,7 @@ class MultiVariableRegressionResult(BaseModel):
         param_keys.remove("Intercept")
         independent_variables = []
         for k in param_keys:
-            independent_variables.append(IndependentVariable.from_fit(mvlr.fit, k))
+            independent_variables.append(IndependentVariableResult.from_fit(mvlr.fit, k))
 
         # Create resulting TimeSeries
         cols_to_keep = list(param_keys)
@@ -88,7 +201,7 @@ class MultiVariableRegressionResult(BaseModel):
             r2_adj=mvlr.fit.rsquared_adj,
             f_stat=mvlr.fit.fvalue,
             prob_f_stat=mvlr.fit.f_pvalue,
-            intercept=IndependentVariable.from_fit(mvlr.fit, "Intercept"),
+            intercept=IndependentVariableResult.from_fit(mvlr.fit, "Intercept"),
             granularity=mvlr.granularity,
             frame=TimeSeries.from_pandas(frame),
         )

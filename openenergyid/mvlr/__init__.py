@@ -1,12 +1,19 @@
 """Multi-variable linear regression (MVLR) module."""
 
-from .mvlr import MultiVariableLinearRegression, find_best_mvlr, ValidationParameters
-from .models import IndependentVariable, MultiVariableRegressionResult
+from .main import find_best_mvlr
+from .models import (
+    IndependentVariableInput,
+    MultiVariableRegressionInput,
+    MultiVariableRegressionResult,
+    ValidationParameters,
+    IndependentVariableResult,
+)
 
 __all__ = [
-    "MultiVariableLinearRegression",
-    "MultiVariableRegressionResult",
-    "IndependentVariable",
     "find_best_mvlr",
+    "IndependentVariableInput",
+    "MultiVariableRegressionInput",
+    "MultiVariableRegressionResult",
     "ValidationParameters",
+    "IndependentVariableResult",
 ]
