@@ -67,6 +67,12 @@ class MultiVariableRegressionInput(BaseModel):
     validation_parameters: ValidationParameters = Field(
         alias="validationParameters", default=ValidationParameters()
     )
+    single_use_exog_prefixes: Optional[List[str]] = Field(
+        # default=["HDD", "CDD", "FDD"],
+        default=None,
+        alias="singleUseExogPrefixes",
+        description="List of prefixes to be used as single-use exogenous variables.",
+    )
 
     def model_post_init(self, __context: Any) -> None:
         """Post init hook."""

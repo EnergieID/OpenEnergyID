@@ -40,6 +40,7 @@ class MultiVariableLinearRegression:
         cross_validation: bool = False,
         allow_negative_predictions: bool = False,
         granularity: Granularity = None,
+        single_use_exog_prefixes: list[str] = None,
     ):
         """Parameters
         ----------
@@ -62,6 +63,15 @@ class MultiVariableLinearRegression:
             If True, allow predictions to be negative.
             For gas consumption or PV production, this is not physical
             so allow_negative_predictions should be False
+        granularity : Granularity, default=None
+            Granularity of the data. Is only used for the output of the model.
+            If None, the granularity is not set.
+        single_use_exog_prefixes : list of str, default=None
+            List of variable prefixes that indicate a variable type that should only be used once.
+            For example, if the list contains "HDD", only one of the columns "HDD1", "HDD2", "HDD3" etc.
+            will be used as an independent variable.
+            Once the best fit using a variable with a given prefix is found, the other variables with the same
+            prefix will not be used as independent variables.
         """
         self.data = data.copy()
         if y not in self.data.columns:
@@ -76,6 +86,7 @@ class MultiVariableLinearRegression:
         self.cross_validation = cross_validation
         self.allow_negative_predictions = allow_negative_predictions
         self.granularity = granularity
+        self.single_use_exog_prefixes = single_use_exog_prefixes
         self._fit = None
         self._list_of_fits = []
         self.list_of_cverrors = []
@@ -166,6 +177,18 @@ class MultiVariableLinearRegression:
             else:
                 self._list_of_fits.append(best_fit)
                 all_model_terms_dict.pop(best_x)
+
+                # Check if `best_x` starts with a prefix that should only be used once
+                # If so, remove all other variables with the same prefix from the list of candidates
+                if self.single_use_exog_prefixes:
+                    for prefix in self.single_use_exog_prefixes:
+                        if best_x.startswith(prefix):
+                            all_model_terms_dict = {
+                                k: v
+                                for k, v in all_model_terms_dict.items()
+                                if not k.startswith(prefix)
+                            }
+
         self._fit = self._list_of_fits[-1]
 
     def _do_analysis_cross_validation(self):
@@ -236,6 +259,17 @@ class MultiVariableLinearRegression:
 
             # next iteration with the found exog removed
             all_model_terms_dict.pop(best_x)
+
+            # Check if `best_x` starts with a prefix that should only be used once
+            # If so, remove all other variables with the same prefix from the list of candidates
+            if self.single_use_exog_prefixes:
+                for prefix in self.single_use_exog_prefixes:
+                    if best_x.startswith(prefix):
+                        all_model_terms_dict = {
+                            k: v
+                            for k, v in all_model_terms_dict.items()
+                            if not k.startswith(prefix)
+                        }
 
         self._fit = self._list_of_fits[-1]
 

@@ -17,6 +17,7 @@ def find_best_mvlr(
             y=data.dependent_variable,
             granularity=granularity,
             allow_negative_predictions=data.allow_negative_predictions,
+            single_use_exog_prefixes=data.single_use_exog_prefixes,
         )
         mvlr.do_analysis()
         if mvlr.validate(
