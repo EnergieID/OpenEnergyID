@@ -51,6 +51,11 @@ class IndependentVariableInput(BaseModel):
         "Eg. `HDD_16.5` will be Heating Degree Days with a base temperature of 16.5°C, "
         "`CDD_0` will be Cooling Degree Days with a base temperature of 0°C.",
     )
+    allow_negative_coefficient: bool = Field(
+        default=True,
+        alias="allowNegativeCoefficient",
+        description="Whether the coefficient can be negative.",
+    )
 
 
 class MultiVariableRegressionInput(BaseModel):
@@ -122,6 +127,17 @@ class MultiVariableRegressionInput(BaseModel):
         frame = frame[columns_to_retain].copy()
 
         return frame
+
+    def get_disallowed_negative_coefficients(self) -> List[str]:
+        """Get independent variables that are not allowed to have a negative coefficient."""
+        result = []
+        for iv in self.independent_variables:  # pylint: disable=not-an-iterable
+            if iv.name == COLUMN_TEMPERATUREEQUIVALENT and iv.variants is not None:
+                if not iv.allow_negative_coefficient:
+                    result.extend(iv.variants)
+            elif not iv.allow_negative_coefficient:
+                result.append(iv.name)
+        return result
 
 
 ######################

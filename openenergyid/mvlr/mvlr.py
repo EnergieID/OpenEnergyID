@@ -41,6 +41,7 @@ class MultiVariableLinearRegression:
         allow_negative_predictions: bool = False,
         granularity: Granularity = None,
         single_use_exog_prefixes: list[str] = None,
+        exogs__disallow_negative_coefficient: list[str] = None,
     ):
         """Parameters
         ----------
@@ -72,6 +73,8 @@ class MultiVariableLinearRegression:
             will be used as an independent variable.
             Once the best fit using a variable with a given prefix is found, the other variables with the same
             prefix will not be used as independent variables.
+        exogs__disallow_negative_coefficient : list of str, default=None
+            List of variable names for which the coefficient is not allowed to be negative.
         """
         self.data = data.copy()
         if y not in self.data.columns:
@@ -87,6 +90,7 @@ class MultiVariableLinearRegression:
         self.allow_negative_predictions = allow_negative_predictions
         self.granularity = granularity
         self.single_use_exog_prefixes = single_use_exog_prefixes
+        self.exogs__disallow_negative_coefficient = exogs__disallow_negative_coefficient
         self._fit = None
         self._list_of_fits = []
         self.list_of_cverrors = []
@@ -161,6 +165,15 @@ class MultiVariableLinearRegression:
                     ref_fit.model.formula.rhs_termlist + [term],
                 )
                 fit = fm.ols(model_desc, data=self.data).fit()
+
+                # Check if the coefficient of the variable is allowed to be negative
+                if (
+                    self.exogs__disallow_negative_coefficient is not None
+                    and x in self.exogs__disallow_negative_coefficient
+                    and fit.params[x] < 0
+                ):
+                    continue
+
                 if fit.bic < best_bic:
                     best_bic = fit.bic
                     best_fit = fit
@@ -174,20 +187,20 @@ class MultiVariableLinearRegression:
                 ref_fit.model.formula.rhs_termlist,
             ):
                 break
-            else:
-                self._list_of_fits.append(best_fit)
-                all_model_terms_dict.pop(best_x)
 
-                # Check if `best_x` starts with a prefix that should only be used once
-                # If so, remove all other variables with the same prefix from the list of candidates
-                if self.single_use_exog_prefixes:
-                    for prefix in self.single_use_exog_prefixes:
-                        if best_x.startswith(prefix):
-                            all_model_terms_dict = {
-                                k: v
-                                for k, v in all_model_terms_dict.items()
-                                if not k.startswith(prefix)
-                            }
+            self._list_of_fits.append(best_fit)
+            all_model_terms_dict.pop(best_x)
+
+            # Check if `best_x` starts with a prefix that should only be used once
+            # If so, remove all other variables with the same prefix from the list of candidates
+            if self.single_use_exog_prefixes:
+                for prefix in self.single_use_exog_prefixes:
+                    if best_x.startswith(prefix):
+                        all_model_terms_dict = {
+                            k: v
+                            for k, v in all_model_terms_dict.items()
+                            if not k.startswith(prefix)
+                        }
 
         self._fit = self._list_of_fits[-1]
 
