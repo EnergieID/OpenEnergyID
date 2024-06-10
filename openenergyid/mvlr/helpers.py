@@ -4,7 +4,7 @@ import pandas as pd
 
 from openenergyid.enums import Granularity
 
-pandas_granularity_map = {Granularity.P7D: "W-MON", Granularity.P1M: "MS"}
+pandas_granularity_map = {Granularity.P7D: "W-MON", Granularity.P1M: "MS", Granularity.P1D: "D"}
 
 
 def resample_input_data(
