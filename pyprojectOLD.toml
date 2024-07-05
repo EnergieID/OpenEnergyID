@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+dynamic = ["version"]
+name = "openenergyid"
+authors = [
+    {name = "Jan Pecinovsky", email = "jan@energieid.be"},
+    {name = "Max Helskens", email = "max@energieid.be"},
+]
+maintainers = [
+    {name = "Jan Pecinovsky", email = "jan@energieid.be"}
+]
+description = "Open Source Python library for energy analytics and simulations"
+readme = "README.md"
+license = {file = "LICENSE"}
+keywords = ["energy", "analytics", "simulation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://energyid.eu"
+Repository = "https://github.com/EnergieID/OpenEnergyID"
+"Bugs Tracker" = "https://github.com/EnergieID/OpenEnergyID/issues"
+
+[tool.hatch.version]
+path = "openenergyid/__init__.py"
+
+[tool.ruff]
+line-length = 100

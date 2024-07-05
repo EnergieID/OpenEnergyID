@@ -1,0 +1,11 @@
+{
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "njpwerner.autodocstring",
+      "esbenp.prettier-vscode",
+      "ms-toolsai.jupyter",
+      "tamasfe.even-better-toml",
+      "ms-python.black-formatter"
+    ]
+  }

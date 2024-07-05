@@ -1,0 +1,156 @@
+Based on your project structure and requirements, I'll help you set up a publishing pipeline using Poetry and provide documentation for the README. Let's start by updating your project configuration and then create the documentation.
+
+1. Update your `pyproject.toml`:
+
+Since you're already using Poetry, we don't need to change much in your `pyproject.toml`. However, we'll add a section for versioning:
+
+```toml
+[tool.poetry]
+# ... (keep your existing configuration)
+
+[tool.poetry.version]
+source = "file"
+path = "openenergyid/__init__.py"
+
+# ... (keep the rest of your configuration)
+```
+
+2. Update your `openenergyid/__init__.py`:
+
+Add a `__version__` variable to this file:
+
+```python
+__version__ = "0.1.0"
+```
+
+3. Create a GitHub Actions workflow for publishing:
+
+Create a new file `.github/workflows/publish.yml`:
+
+```yaml
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        pip install poetry
+    - name: Build and publish
+      env:
+        PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+        PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+      run: |
+        poetry config pypi-token.pypi $PYPI_PASSWORD
+        poetry build
+        poetry publish
+
+```
+
+4. Update your README.md:
+
+Add a section about the publishing process:
+
+```markdown
+# OpenEnergyID
+
+Open Source Python library for energy data analytics and simulations
+
+## Installation
+
+You can install OpenEnergyID using pip:
+
+```
+pip install openenergyid
+```
+
+## Usage
+
+[Add basic usage instructions here]
+
+## Development
+
+For information on setting up the development environment and contributing to OpenEnergyID, please see [DEVELOPERS.md](DEVELOPERS.md).
+
+## Publishing
+
+OpenEnergyID uses Poetry for dependency management and packaging. The publishing process is automated using GitHub Actions.
+
+To publish a new version:
+
+1. Update the version in `openenergyid/__init__.py`
+2. Commit your changes
+3. Create and push a new tag with the version number (e.g., `v0.1.1`)
+4. The GitHub Actions workflow will automatically build and publish the package to PyPI
+
+For more detailed information on the development process, please refer to [DEVELOPERS.md](DEVELOPERS.md).
+
+[*more info for developers*](DEVELOPERS.md)
+
+```
+
+5. Update your DEVELOPERS.md:
+
+Add information about the publishing process:
+
+```markdown
+# Development Environment Setup
+
+This guide outlines the setup process for our development environment, focusing on packaging, dependency management, and publishing.
+
+## Poetry for Packaging and Dependency Management
+
+We use [Poetry](https://python-poetry.org/) as our primary tool for packaging and managing dependencies. Poetry provides a simple yet powerful way to manage project dependencies and publish packages.
+
+### Installing Poetry
+
+1. First, [install pipx](https://pipx.pypa.io/stable/installation/) following the instructions on the official website.
+2. Once pipx is installed, you can easily install Poetry by running the following command in your terminal:
+   ```
+   pipx install poetry
+   ```
+3. (*optional*) [Install](vscode:extension/zeshuaro.vscode-python-poetry) the VSCode extension for Poetry
+
+### Setup with Poetry
+
+To set up the project and install dependencies:
+
+```shell
+poetry install
+```
+
+## Publishing
+
+We use GitHub Actions to automate the publishing process to PyPI. Here's how to publish a new version:
+
+1. Update the version in `openenergyid/__init__.py`
+2. Commit your changes
+3. Create and push a new tag with the version number (e.g., `v0.1.1`)
+4. The GitHub Actions workflow will automatically build and publish the package to PyPI
+
+Make sure you have the necessary PyPI credentials set up as secrets in the GitHub repository (PYPI_USERNAME and PYPI_PASSWORD).
+
+## Remarks for devcontainer
+
+[Keep your existing devcontainer instructions here]
+
+## Useful commands for dev work
+
+[Keep your existing dev work commands here]
+
+```
+
+With these changes, you've set up a publishing pipeline using Poetry and GitHub Actions. The process is now documented in both the README.md and DEVELOPERS.md files. When your partner reviews these changes, they can merge them, and the package will be ready for automated publishing to PyPI when a new version tag is pushed.
+
+To publish a new version, you'll just need to update the version in `openenergyid/__init__.py`, commit the changes, create a new tag (e.g., `v0.1.1`), and push it to GitHub. The GitHub Actions workflow will handle the rest.

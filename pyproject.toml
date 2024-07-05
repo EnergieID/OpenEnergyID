@@ -1,20 +1,27 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[project]
-dynamic = ["version"]
+[tool.poetry]
 name = "openenergyid"
-authors = [
-    {name = "Jan Pecinovsky", email = "jan@energieid.be"},
-    {name = "Max Helskens", email = "max@energieid.be"},
-]
-maintainers = [
-    {name = "Jan Pecinovsky", email = "jan@energieid.be"}
-]
+version = "0.1.2" # You'll need to set this manually or use a different method for dynamic versioning
 description = "Open Source Python library for energy analytics and simulations"
+authors = [
+    "Jan Pecinovsky <jan@energieid.be>",
+    "Max Helskens <max@energieid.be>",
+]
+
+dependencies.python = "^3.10"
+dependencies.matplotlib = "^3.9.1"
+dependencies.energyid = "^0.0.17"
+dependencies.patsy = "^0.5.6"
+dependencies.pytz = "^2024.1"
+dependencies.numpy = "^2.0.0"
+dependencies.pandas = "^2.2.2"
+dependencies.statsmodels = "^0.14.2"
+dependencies.pydantic = "^2.7.4"
+maintainers = ["Jan Pecinovsky <jan@energieid.be>"]
+license = "MIT"
 readme = "README.md"
-license = {file = "LICENSE"}
+homepage = "https://energyid.eu"
+repository = "https://github.com/EnergieID/OpenEnergyID"
+documentation = "https://github.com/EnergieID/OpenEnergyID"
 keywords = ["energy", "analytics", "simulation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -30,13 +37,16 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-[project.urls]
-Homepage = "https://energyid.eu"
-Repository = "https://github.com/EnergieID/OpenEnergyID"
-"Bugs Tracker" = "https://github.com/EnergieID/OpenEnergyID/issues"
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/EnergieID/OpenEnergyID/issues"
 
-[tool.hatch.version]
-path = "openenergyid/__init__.py"
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+ipykernel = "^6.29.4"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
 line-length = 100

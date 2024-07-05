@@ -333,7 +333,9 @@ class MultiVariableLinearRegression:
                 corrected_model_desc,
             )
             fit = fm.ols(corrected_model_desc, data=self.data).fit()
-            pars_to_prune = fit.pvalues.where(fit.pvalues > p_max).dropna().index.tolist()
+            pars_to_prune = (
+                fit.pvalues.where(fit.pvalues > p_max).dropna().index.tolist()
+            )
             try:
                 pars_to_prune.remove("Intercept")
             except ValueError:
@@ -427,7 +429,10 @@ class MultiVariableLinearRegression:
         self.data = self._predict(fit=self.fit, data=self.data)
 
     def validate(
-        self, min_rsquared: float = 0.75, max_f_pvalue: float = 0.05, max_pvalues: float = 0.05
+        self,
+        min_rsquared: float = 0.75,
+        max_f_pvalue: float = 0.05,
+        max_pvalues: float = 0.05,
     ) -> bool:
         """Checks if the model is valid.
 
