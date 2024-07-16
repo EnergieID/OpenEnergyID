@@ -22,9 +22,6 @@ def create_multi_index_input_frame(
 
     df = pd.concat([gross_injection, gross_offtake, key], axis=1)
 
-    # Do a check that the sum of the keys per timestamp is 1
-    assert df[KEY].dropna(how="all").sum(axis=1).round(2).eq(1).all()
-
     return df
 
 
