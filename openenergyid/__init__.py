@@ -3,6 +3,6 @@
 __version__ = "0.1.10"
 
 from .enums import Granularity
-from .models import TimeSeries
+from .models import TimeDataFrame, TimeSeries
 
-__all__ = ["Granularity", "TimeSeries"]
+__all__ = ["Granularity", "TimeDataFrame", "TimeSeries"]

@@ -6,7 +6,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 import pandas as pd
 
-from openenergyid import TimeSeries
+from openenergyid import TimeDataFrame
 from .data_formatting import create_multi_index_input_frame
 from .const import NET_INJECTION, NET_OFFTAKE, SHARED_ENERGY
 
@@ -22,9 +22,9 @@ class CalculationMethod(Enum):
 class EnergySharingInput(BaseModel):
     """Input data for energy sharing."""
 
-    gross_injection: Annotated[TimeSeries, Field(alias="grossInjection")]
-    gross_offtake: Annotated[TimeSeries, Field(alias="grossOfftake")]
-    key: Annotated[TimeSeries, Field(alias="key")]
+    gross_injection: Annotated[TimeDataFrame, Field(alias="grossInjection")]
+    gross_offtake: Annotated[TimeDataFrame, Field(alias="grossOfftake")]
+    key: Annotated[TimeDataFrame, Field(alias="key")]
     timezone: str = Field(alias="timeZone", default="Europe/Brussels")
 
     def data_frame(self) -> pd.DataFrame:
@@ -41,15 +41,15 @@ class EnergySharingInput(BaseModel):
 class EnergySharingOutput(BaseModel):
     """Output data for energy sharing."""
 
-    net_injection: TimeSeries = Field(alias="netInjection")
-    net_offtake: TimeSeries = Field(alias="netOfftake")
-    shared_energy: TimeSeries = Field(alias="sharedEnergy")
+    net_injection: TimeDataFrame = Field(alias="netInjection")
+    net_offtake: TimeDataFrame = Field(alias="netOfftake")
+    shared_energy: TimeDataFrame = Field(alias="sharedEnergy")
 
     @classmethod
     def from_calculation_result(cls, result: pd.DataFrame) -> "EnergySharingOutput":
         """Create an output model from a calculation result."""
         return cls.model_construct(
-            net_injection=TimeSeries.from_pandas(result[NET_INJECTION]),
-            net_offtake=TimeSeries.from_pandas(result[NET_OFFTAKE]),
-            shared_energy=TimeSeries.from_pandas(result[SHARED_ENERGY]),
+            net_injection=TimeDataFrame.from_pandas(result[NET_INJECTION]),
+            net_offtake=TimeDataFrame.from_pandas(result[NET_OFFTAKE]),
+            shared_energy=TimeDataFrame.from_pandas(result[SHARED_ENERGY]),
         )

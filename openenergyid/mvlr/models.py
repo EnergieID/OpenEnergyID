@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict
 import statsmodels.formula.api as fm
 
 from openenergyid.enums import Granularity
-from openenergyid.models import TimeSeries
+from openenergyid.models import TimeDataFrame
 
 from .mvlr import MultiVariableLinearRegression
 
@@ -66,7 +66,7 @@ class MultiVariableRegressionInput(BaseModel):
         alias="independentVariables", min_length=1
     )
     dependent_variable: str = Field(alias="dependentVariable")
-    frame: TimeSeries
+    frame: TimeDataFrame
     granularities: list[Granularity]
     allow_negative_predictions: bool = Field(alias="allowNegativePredictions", default=False)
     validation_parameters: ValidationParameters = Field(
@@ -195,7 +195,7 @@ class MultiVariableRegressionResult(BaseModel):
     prob_f_stat: float = Field(ge=0, le=1, alias="probFStat")
     intercept: IndependentVariableResult
     granularity: Granularity
-    frame: TimeSeries
+    frame: TimeDataFrame
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -225,5 +225,5 @@ class MultiVariableRegressionResult(BaseModel):
             prob_f_stat=mvlr.fit.f_pvalue,
             intercept=IndependentVariableResult.from_fit(mvlr.fit, "Intercept"),
             granularity=mvlr.granularity,
-            frame=TimeSeries.from_pandas(frame),
+            frame=TimeDataFrame.from_pandas(frame),
         )
