@@ -11,3 +11,8 @@ ELECTRICITY_PRODUCED: Literal["electricity_produced"] = "electricity_produced"
 PRICE_DAY_AHEAD: Literal["price_day_ahead"] = "price_day_ahead"
 PRICE_IMBALANCE_UPWARD: Literal["price_imbalance_upward"] = "price_imbalance_upward"
 PRICE_IMBALANCE_DOWNWARD: Literal["price_imbalance_downward"] = "price_imbalance_downward"
+PRICE_ELECTRICITY_DELIVERED: Literal["price_electricity_delivered"] = "price_electricity_delivered"
+PRICE_ELECTRICITY_EXPORTED: Literal["price_electricity_exported"] = "price_electricity_exported"
+
+RLP: Literal["RLP"] = "RLP"
+SPP: Literal["SPP"] = "SPP"

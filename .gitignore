@@ -164,3 +164,4 @@ secrets.json
 private_data/
 figures/
 temp_notebooks/
+*.pkl
