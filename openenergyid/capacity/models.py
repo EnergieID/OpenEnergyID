@@ -1,4 +1,5 @@
-import pandas as pd
+"""Model for Capacity Analysis."""
+
 from pydantic import BaseModel, Field
 from openenergyid.models import TimeSeries
 
@@ -8,16 +9,18 @@ class CapacityInput(BaseModel):
 
     timezone: str = Field(alias="timeZone")
     series: TimeSeries
-    # fromDate: datetime.datetime
-    # toDate: datetime.datetime
 
-    class Config:
-        populate_by_name = True
 
-    @classmethod
-    def from_pandas(cls, series: pd.Series, timezone: str = "UTC"):
-        return cls(timeZone=timezone, series=TimeSeries.from_pandas(series))
+class PeakDetail(BaseModel):
+    """Model for peak detail"""
 
-    def get_series(self) -> pd.Series:
-        """Return the pandas series ready for analysis."""
-        return self.series.to_pandas(timezone=self.timezone)
+    peak_time: str = Field(alias="peakTime")
+    peak_value: float = Field(alias="peakValue")
+    surrounding_data: TimeSeries = Field(alias="surroundingData")
+
+
+class CapacityOutput(BaseModel):
+    """Model for capacity output"""
+
+    peaks: TimeSeries
+    peak_details: list[PeakDetail] = Field(alias="peakDetails")
