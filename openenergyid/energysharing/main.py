@@ -16,23 +16,24 @@ def _calculate(df: pd.DataFrame, method: CalculationMethod) -> pd.DataFrame:
     injections_to_share = []
     rest = {}
 
-    for participant in df.columns.levels[1]:
+    for participant in df[GROSS_INJECTION].columns:
         injection_to_share = df[GROSS_INJECTION][participant].copy()
 
+        key = df[KEY].copy()
         if method == CalculationMethod.RELATIVE or method == CalculationMethod.OPTIMAL:
             # Set the key of the current participant to 0
             # Re-normalize the keys for the other participants
-            key = df[KEY].copy()
-            key.loc[:, participant] = 0
-            key = key.div(key.sum(axis=1), axis=0)
-        elif method == CalculationMethod.FIXED:
-            key = df[KEY].copy()
+            if participant in df[KEY].columns:
+                key.loc[:, participant] = 0
+                key = key.div(key.sum(axis=1), axis=0)
 
         # Multiply injection_to_share with the key of each participant
         shared_by_participant = (injection_to_share * key.T).T
         shared_by_participant.fillna(0, inplace=True)
+
         # Set the value for the current participant to 0
-        shared_by_participant.loc[:, participant] = 0
+        if participant in shared_by_participant.columns:
+            shared_by_participant.loc[:, participant] = 0
 
         # Put the not shared injection in the rest
         rest[participant] = injection_to_share - shared_by_participant.sum(axis=1)
