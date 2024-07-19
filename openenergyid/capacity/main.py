@@ -1,7 +1,10 @@
-from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+"""Main module for capacity analysis."""
+
+import datetime as dt
+from typing import List
 import pandas as pd
-from openenergyid.capacity.models import CapacityInput
+
+from .models import PeakDetail
 
 
 class CapacityAnalysis:
@@ -21,7 +24,7 @@ class CapacityAnalysis:
 
     def __init__(
         self,
-        data: CapacityInput,
+        data: pd.Series,
         threshold: float = 2.5,
         window: str = "MS",  # Default to month start
         x_padding: int = 4,
@@ -30,7 +33,7 @@ class CapacityAnalysis:
         Constructs all the necessary attributes for the CapacityAnalysis object.
 
         Parameters:
-            data (CapacityInput): The input data for capacity analysis.
+            data (CapacityInput): Localized Pandas Series containing power measurements.
             threshold (float): The value above which a peak is considered significant. Defaults to 2.5.
             window (str): The window size for grouping data before finding peaks. Defaults to "MS" (month start).
             x_padding (int): The padding to apply on the x-axis for visualization purposes. Defaults to 4.
@@ -41,23 +44,23 @@ class CapacityAnalysis:
         self.window = window
         self.x_padding = x_padding
 
-    def find_peaks(self) -> List[Tuple[datetime, float]]:
+    def find_peaks(self) -> pd.Series:
         """
         Identifies peaks in the data based on the specified threshold and window.
 
         Returns:
             List[Tuple[datetime, float]]: A list of tuples where each tuple contains the timestamp (datetime) of the peak and its value (float).
         """
-        series = self.data.get_series()
         # Group by the specified window (default is month start)
-        grouped = series.groupby(pd.Grouper(freq=self.window))
+        grouped = self.data.groupby(pd.Grouper(freq=self.window))
         # Find the index (timestamp) of the maximum value in each group
         peak_indices = grouped.idxmax()
         # Get the corresponding peak values
-        peaks = series.loc[peak_indices][series > self.threshold]
-        return [(index, value) for index, value in peaks.items()]
+        peaks = self.data.loc[peak_indices][self.data > self.threshold]
 
-    def find_peaks_with_surroundings(self, num_peaks: int = 10) -> List[Dict]:
+        return peaks
+
+    def find_peaks_with_surroundings(self, num_peaks: int = 10) -> List[PeakDetail]:
         """
         Finds peaks along with their surrounding data points.
 
@@ -67,39 +70,18 @@ class CapacityAnalysis:
         Returns:
             List[Dict]: A list of dictionaries, each representing a peak and its surroundings.
         """
-        series = self.data.get_series()
-        peaks = []
-
-        for i in range(len(series) - 1):
-            if series.iloc[i] > series.iloc[i - 1] and series.iloc[i] > series.iloc[i + 1]:
-                peaks.append((series.index[i], series.iloc[i]))
-
-        peaks.sort(key=lambda x: x[1], reverse=True)
-        top_peaks = peaks[:num_peaks]
+        peaks = self.data.sort_values(ascending=False).head(num_peaks)
 
         result = []
-        for peak_time, peak_value in top_peaks:
-            start_time = peak_time - timedelta(minutes=15 * self.x_padding)
-            end_time = peak_time + timedelta(minutes=15 * (self.x_padding + 1))
-            surrounding_data = series[start_time:end_time]
+        for peak_time, peak_value in peaks.items():
+            start_time = peak_time - dt.timedelta(minutes=15 * self.x_padding)
+            end_time = peak_time + dt.timedelta(minutes=15 * (self.x_padding + 1))
+            surrounding_data = self.data[start_time:end_time]
 
             result.append(
-                {
-                    "peak_time": peak_time.isoformat(),
-                    "peak_value": float(peak_value),
-                    "surrounding_data": [
-                        {"timestamp": ts.isoformat(), "value": float(val)}
-                        for ts, val in surrounding_data.items()
-                    ],
-                }
+                PeakDetail.model_construct(
+                    peak_time=peak_time, peak_value=peak_value, surrounding_data=surrounding_data
+                )
             )
 
         return result
-
-    def run_analysis(self):
-        peaks = self.find_peaks()
-        return {
-            "peak_moments": [
-                {"peak_time": peak[0].isoformat(), "peak_value": float(peak[1])} for peak in peaks
-            ]
-        }
