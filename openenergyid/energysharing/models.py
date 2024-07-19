@@ -34,7 +34,7 @@ class KeyInput(TimeDataFrame):
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization validation."""
         for row in self.data:
-            if round(sum(row), 6) != 1:
+            if round(sum(row), 3) != 1.0:
                 raise ValueError("Each row must sum to 1.")
         return super().model_post_init(__context)
 
