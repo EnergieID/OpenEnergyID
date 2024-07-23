@@ -1,6 +1,7 @@
 """Model for Capacity Analysis."""
 
-from pydantic import BaseModel, Field
+import datetime as dt
+from pydantic import BaseModel, ConfigDict, Field
 from openenergyid.models import TimeSeries
 
 
@@ -14,9 +15,10 @@ class CapacityInput(BaseModel):
 class PeakDetail(BaseModel):
     """Model for peak detail"""
 
-    peak_time: str = Field(alias="peakTime")
+    peak_time: dt.datetime = Field(alias="peakTime")
     peak_value: float = Field(alias="peakValue")
     surrounding_data: TimeSeries = Field(alias="surroundingData")
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CapacityOutput(BaseModel):
@@ -24,3 +26,4 @@ class CapacityOutput(BaseModel):
 
     peaks: TimeSeries
     peak_details: list[PeakDetail] = Field(alias="peakDetails")
+    model_config = ConfigDict(populate_by_name=True)

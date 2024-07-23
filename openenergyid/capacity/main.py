@@ -49,7 +49,7 @@ class CapacityAnalysis:
         Identifies peaks in the data based on the specified threshold and window.
 
         Returns:
-            List[Tuple[datetime, float]]: A list of tuples where each tuple contains the timestamp (datetime) of the peak and its value (float).
+            pd.Series: A Pandas Series containing the peaks
         """
         # Group by the specified window (default is month start)
         grouped = self.data.groupby(pd.Grouper(freq=self.window))
@@ -60,7 +60,9 @@ class CapacityAnalysis:
 
         return peaks
 
-    def find_peaks_with_surroundings(self, num_peaks: int = 10) -> List[PeakDetail]:
+    def find_peaks_with_surroundings(
+            self, num_peaks: int = 10
+            ) -> List[tuple[dt.datetime,float,pd.Series]]:
         """
         Finds peaks along with their surrounding data points.
 
@@ -68,10 +70,12 @@ class CapacityAnalysis:
             num_peaks (int): The number of peaks to find. Defaults to 10.
 
         Returns:
-            List[Dict]: A list of dictionaries, each representing a peak and its surroundings.
+            List[tuple[dt.datetime,float,pd.Series]]: A list of tuples containing peak time, peak value, and surrounding data.
         """
         peaks = self.data.sort_values(ascending=False).head(num_peaks)
-
+        peaks = peaks[peaks > self.threshold]
+        if peaks.empty:
+            return []
         result = []
         for peak_time, peak_value in peaks.items():
             start_time = peak_time - dt.timedelta(minutes=15 * self.x_padding)
@@ -79,9 +83,11 @@ class CapacityAnalysis:
             surrounding_data = self.data[start_time:end_time]
 
             result.append(
-                PeakDetail.model_construct(
-                    peak_time=peak_time, peak_value=peak_value, surrounding_data=surrounding_data
-                )
+                [
+                    peak_time,
+                    peak_value,
+                    surrounding_data,
+                ]
             )
 
         return result
