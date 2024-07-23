@@ -4,7 +4,6 @@ import datetime as dt
 from typing import List
 import pandas as pd
 
-from .models import PeakDetail
 
 
 class CapacityAnalysis:
