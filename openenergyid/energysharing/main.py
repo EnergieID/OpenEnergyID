@@ -52,7 +52,7 @@ def _calculate(df: pd.DataFrame, method: CalculationMethod) -> pd.DataFrame:
     net_offtake = df[GROSS_OFFTAKE] - max_allocated_injection
 
     # Sum all negative values into a column "Not Shared"
-    not_shared_after_assignment = net_offtake.clip(upper=0).sum(axis=1) * -1
+    not_shared_after_assignment = net_offtake.clip(upper=0).sum(axis=1).abs()
 
     # Clip the values to 0
     net_offtake = net_offtake.clip(lower=0)
