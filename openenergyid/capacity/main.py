@@ -1,7 +1,6 @@
 """Main module for capacity analysis."""
 
 import datetime as dt
-from typing import List
 import pandas as pd
 
 
@@ -60,7 +59,7 @@ class CapacityAnalysis:
 
     def find_peaks_with_surroundings(
         self, num_peaks: int = 10
-    ) -> List[tuple[dt.datetime, float, pd.Series]]:
+    ) -> list[tuple[dt.datetime, float, pd.Series]]:
         """
         Finds peaks along with their surrounding data points.
 
