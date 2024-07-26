@@ -1,6 +1,5 @@
 """Main module of the DynTar package."""
 
-from typing import Optional
 import pandas as pd
 
 from openenergyid.const import (
@@ -40,7 +39,7 @@ def weigh_by_monthly_profile(series: pd.Series, profile: pd.Series) -> pd.Series
     return pd.concat(results)["weighted"]
 
 
-def extend_dataframe_with_smr2(df: pd.DataFrame, inplace: bool = False) -> Optional[pd.DataFrame]:
+def extend_dataframe_with_smr2(df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame | None:
     """Extend a DataFrame with the SMR2 columns."""
     if not inplace:
         result_df = df.copy()
@@ -67,7 +66,7 @@ def extend_dataframe_with_smr2(df: pd.DataFrame, inplace: bool = False) -> Optio
     return None
 
 
-def extend_dataframe_with_costs(df: pd.DataFrame, inplace: bool = False) -> Optional[pd.DataFrame]:
+def extend_dataframe_with_costs(df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame | None:
     """Extend a DataFrame with the cost columns."""
     if not inplace:
         result_df = df.copy()
@@ -95,7 +94,7 @@ def extend_dataframe_with_costs(df: pd.DataFrame, inplace: bool = False) -> Opti
 
 def extend_dataframe_with_weighted_prices(
     df: pd.DataFrame, inplace: bool = False
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Extend a DataFrame with the weighted price columns."""
     if not inplace:
         df = df.copy()
@@ -118,9 +117,7 @@ def extend_dataframe_with_weighted_prices(
     return None
 
 
-def extend_dataframe_with_heatmap(
-    df: pd.DataFrame, inplace: bool = False
-) -> Optional[pd.DataFrame]:
+def extend_dataframe_with_heatmap(df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame | None:
     """Extend a DataFrame with the heatmap columns."""
     if not inplace:
         df = df.copy()
@@ -154,7 +151,7 @@ def extend_dataframe_with_heatmap(
     return None
 
 
-def calculate_dyntar_columns(df: pd.DataFrame, inplace: bool = False) -> Optional[pd.DataFrame]:
+def calculate_dyntar_columns(df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame | None:
     """Calculate all columns required for the dynamic tariff analysis."""
     if not inplace:
         df = df.copy()

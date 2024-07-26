@@ -1,7 +1,7 @@
 """Data models for the Open Energy ID."""
 
 import datetime as dt
-from typing import Optional, overload, Union
+from typing import overload
 
 from typing import Self
 
@@ -15,11 +15,11 @@ class TimeSeriesBase(BaseModel):
     index: list[dt.datetime]
 
     @classmethod
-    def from_pandas(cls, data: Union[pd.Series, pd.DataFrame]) -> Self:
+    def from_pandas(cls, data: pd.Series | pd.DataFrame) -> Self:
         """Create from a Pandas Object."""
         raise NotImplementedError
 
-    def to_pandas(self, timezone: str = "UTC") -> Union[pd.Series, pd.DataFrame]:
+    def to_pandas(self, timezone: str = "UTC") -> pd.Series | pd.DataFrame:
         """Convert to a Pandas Object."""
         raise NotImplementedError
 
@@ -31,7 +31,7 @@ class TimeSeriesBase(BaseModel):
     def to_json(self, path: str, **kwargs) -> None:
         """Dump to a JSON file."""
 
-    def to_json(self, path: Optional[str] = None, **kwargs) -> Optional[str]:
+    def to_json(self, path: str | None = None, **kwargs) -> str | None:
         """Dump to a JSON string or file."""
         if path is None:
             return self.model_dump_json(**kwargs)
@@ -51,13 +51,13 @@ class TimeSeriesBase(BaseModel):
         """Load from a JSON file."""
 
     @classmethod
-    def from_json(cls, string: Optional[str] = None, path: Optional[str] = None, **kwargs) -> Self:
+    def from_json(cls, string: str | None = None, path: str | None = None, **kwargs) -> Self:
         """Load from a JSON file or string."""
         if string:
             return cls.model_validate_json(string, **kwargs)
         if path:
             encoding = kwargs.pop("encoding", "UTF-8")
-            with open(path, "r", encoding=encoding) as file:
+            with open(path, encoding=encoding) as file:
                 return cls.model_validate_json(file.read(), **kwargs)
         raise ValueError("Either string or path must be provided.")
 
@@ -65,7 +65,7 @@ class TimeSeriesBase(BaseModel):
 class TimeSeries(TimeSeriesBase):
     """Time series data with a single column."""
 
-    name: Union[str, None] = None
+    name: str | None = None
     data: list[float]
 
     @classmethod

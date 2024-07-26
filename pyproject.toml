@@ -6,15 +6,13 @@ build-backend = "hatchling.build"
 dynamic = ["version"]
 name = "openenergyid"
 authors = [
-    {name = "Jan Pecinovsky", email = "jan@energieid.be"},
-    {name = "Max Helskens", email = "max@energieid.be"},
+    { name = "Jan Pecinovsky", email = "jan@energieid.be" },
+    { name = "Max Helskens", email = "max@energieid.be" },
 ]
-maintainers = [
-    {name = "Jan Pecinovsky", email = "jan@energieid.be"}
-]
+maintainers = [{ name = "Jan Pecinovsky", email = "jan@energieid.be" }]
 description = "Open Source Python library for energy analytics and simulations"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 keywords = ["energy", "analytics", "simulation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -61,4 +59,4 @@ dependencies.pandas = "^2.2.2"
 matplotlib = "^3.9.1"
 jupyter = "^1.0.0"
 ipykernel = "^6.29.5"
-
+seaborn = "^0.13.2"

@@ -1,5 +1,6 @@
 """Models for multivariable linear regression."""
-from typing import Any, List, Optional
+
+from typing import Any
 import pandas as pd
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -45,7 +46,7 @@ class IndependentVariableInput(BaseModel):
         "If the name is `temperatureEquivalent`, "
         "it will be unpacked into columns according to the variants."
     )
-    variants: Optional[list[str]] = Field(
+    variants: list[str] | None = Field(
         default=None,
         description="Variants of the `temperatureEquivalent` independent variable. "
         "Eg. `HDD_16.5` will be Heating Degree Days with a base temperature of 16.5°C, "
@@ -62,7 +63,7 @@ class MultiVariableRegressionInput(BaseModel):
     """Multi-variable regression input."""
 
     timezone: str = Field(alias="timeZone")
-    independent_variables: List[IndependentVariableInput] = Field(
+    independent_variables: list[IndependentVariableInput] = Field(
         alias="independentVariables", min_length=1
     )
     dependent_variable: str = Field(alias="dependentVariable")
@@ -72,7 +73,7 @@ class MultiVariableRegressionInput(BaseModel):
     validation_parameters: ValidationParameters = Field(
         alias="validationParameters", default=ValidationParameters()
     )
-    single_use_exog_prefixes: Optional[List[str]] = Field(
+    single_use_exog_prefixes: list[str] | None = Field(
         # default=["HDD", "CDD", "FDD"],
         default=None,
         alias="singleUseExogPrefixes",
@@ -128,7 +129,7 @@ class MultiVariableRegressionInput(BaseModel):
 
         return frame
 
-    def get_disallowed_negative_coefficients(self) -> List[str]:
+    def get_disallowed_negative_coefficients(self) -> list[str]:
         """Get independent variables that are not allowed to have a negative coefficient."""
         result = []
         for iv in self.independent_variables:  # pylint: disable=not-an-iterable
@@ -158,12 +159,10 @@ class IndependentVariableResult(BaseModel):
 
     name: str
     coef: float
-    t_stat: Optional[float] = Field(default=None, alias="tStat")
-    p_value: Optional[float] = Field(ge=0, le=1, default=None, alias="pValue")
-    std_err: Optional[float] = Field(default=None, alias="stdErr")
-    confidence_interval: Optional[ConfidenceInterval] = Field(
-        default=None, alias="confidenceInterval"
-    )
+    t_stat: float | None = Field(default=None, alias="tStat")
+    p_value: float | None = Field(ge=0, le=1, default=None, alias="pValue")
+    std_err: float | None = Field(default=None, alias="stdErr")
+    confidence_interval: ConfidenceInterval | None = Field(default=None, alias="confidenceInterval")
 
     model_config = ConfigDict(populate_by_name=True)
 
