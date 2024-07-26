@@ -41,7 +41,6 @@ def create_multi_index_output_frame(
 
     df = pd.concat([net_injection, net_offtake, shared_energy], axis=1)
 
-    df = df.round(2)
     return df
 
 
