@@ -1,15 +1,18 @@
+"""Proof of concept of a data analysis module using pandera."""
+
+from pandera.typing import DataFrame
 from .models import InputModel, OutputModel
-import pandas as pd
 
 
-def analyse(df: InputModel | pd.DataFrame) -> OutputModel:
+def analyse(df: DataFrame[InputModel]) -> DataFrame[OutputModel]:
+    """Perform analysis on the input data and return the output data."""
     # Validate input data
-    df = InputModel.validate(df)
+    InputModel.validate(df)
 
     # Perform analysis
     pass
 
     # Validate output data
-    df = OutputModel.validate(df)
+    OutputModel.validate(df)
 
     return df
