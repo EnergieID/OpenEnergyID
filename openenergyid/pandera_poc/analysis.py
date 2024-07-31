@@ -1,14 +1,15 @@
 from .models import InputModel, OutputModel
+import pandas as pd
 
 
-def analyse(df: InputModel) -> OutputModel:
+def analyse(df: InputModel | pd.DataFrame) -> OutputModel:
     # Validate input data
-    InputModel.validate(df)
+    df = InputModel.validate(df)
 
     # Perform analysis
     pass
 
     # Validate output data
-    OutputModel.validate(df)
+    df = OutputModel.validate(df)
 
     return df
