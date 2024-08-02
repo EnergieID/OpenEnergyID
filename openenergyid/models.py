@@ -6,7 +6,7 @@ from typing import overload
 from typing import Self
 
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class TimeSeriesBase(BaseModel):
@@ -47,7 +47,7 @@ class TimeSeriesBase(BaseModel):
 
     @overload
     @classmethod
-    def from_json(cls, path: str, **kwargs) -> Self:
+    def from_json(cls, *, path: str, **kwargs) -> Self:
         """Load from a JSON file."""
 
     @classmethod
@@ -66,12 +66,18 @@ class TimeSeries(TimeSeriesBase):
     """Time series data with a single column."""
 
     name: str | None = None
-    data: list[float]
+    data: list[float | None]
+
+    @field_validator("data")
+    @classmethod
+    def replace_nan_with_none(cls, data: list[float]) -> list[float | None]:
+        """Replace NaN values with None."""
+        return [None if pd.isna(value) else value for value in data]
 
     @classmethod
     def from_pandas(cls, data: pd.Series) -> Self:
         """Create from a Pandas Series."""
-        return cls.model_construct(name=data.name, data=data.tolist(), index=data.index.tolist())
+        return cls(name=str(data.name), data=data.tolist(), index=data.index.tolist())
 
     def to_pandas(self, timezone: str = "UTC") -> pd.Series:
         """Convert to a Pandas Series."""
@@ -84,12 +90,18 @@ class TimeDataFrame(TimeSeriesBase):
     """Time series data with multiple columns."""
 
     columns: list[str]
-    data: list[list[float]]
+    data: list[list[float | None]]
+
+    @field_validator("data")
+    @classmethod
+    def replace_nan_with_none(cls, data: list[list[float]]) -> list[list[float | None]]:
+        """Replace NaN values with None."""
+        return [[None if pd.isna(value) else value for value in row] for row in data]
 
     @classmethod
     def from_pandas(cls, data: pd.DataFrame) -> Self:
         """Create from a Pandas DataFrame."""
-        return cls.model_construct(
+        return cls(
             columns=data.columns.tolist(), data=data.values.tolist(), index=data.index.tolist()
         )
 
