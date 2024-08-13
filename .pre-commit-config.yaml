@@ -16,3 +16,9 @@ repos:
     hooks:
       - id: pyupgrade
         args: [--py311-plus]
+
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: "" # Use the sha / tag you want to point at
+  #   hooks:
+  #     - id: mypy
+  #       args: [--strict, --ignore-missing-imports]
