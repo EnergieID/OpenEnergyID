@@ -1,7 +1,9 @@
 """Main module for capacity analysis."""
 
 import datetime as dt
+import typing
 import pandas as pd
+import pandera.typing as pdt
 
 
 class CapacityAnalysis:
@@ -21,7 +23,7 @@ class CapacityAnalysis:
 
     def __init__(
         self,
-        data: pd.Series,
+        data: pdt.Series,
         threshold: float = 2.5,
         window: str = "MS",  # Default to month start
         x_padding: int = 4,
@@ -50,11 +52,12 @@ class CapacityAnalysis:
         """
         # Group by the specified window (default is month start)
         grouped = self.data.groupby(pd.Grouper(freq=self.window))
+
         # Find the index (timestamp) of the maximum value in each group
         peak_indices = grouped.idxmax()
+
         # Get the corresponding peak values
         peaks = self.data.loc[peak_indices][self.data > self.threshold]
-
         return peaks
 
     def find_peaks_with_surroundings(
@@ -69,12 +72,20 @@ class CapacityAnalysis:
         Returns:
             List[tuple[dt.datetime,float,pd.Series]]: A list of tuples containing peak time, peak value, and surrounding data.
         """
-        peaks = self.data.sort_values(ascending=False).head(num_peaks)
+        peaks = self.data.nlargest(num_peaks * 2)
         peaks = peaks[peaks > self.threshold]
         if peaks.empty:
             return []
+
         result = []
+        window_size = dt.timedelta(minutes=15 * (2 * self.x_padding + 1))
+
         for peak_time, peak_value in peaks.items():
+            peak_time = typing.cast(pd.Timestamp, peak_time)
+
+            if any(abs(peak_time - prev_peak[0]) < window_size for prev_peak in result):
+                continue
+
             start_time = peak_time - dt.timedelta(minutes=15 * self.x_padding)
             end_time = peak_time + dt.timedelta(minutes=15 * (self.x_padding + 1))
             surrounding_data = self.data[start_time:end_time]
@@ -86,5 +97,6 @@ class CapacityAnalysis:
                     surrounding_data,
                 ]
             )
-
+            if len(result) == num_peaks:
+                break
         return result
