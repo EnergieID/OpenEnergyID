@@ -8,6 +8,7 @@ name = "openenergyid"
 authors = [
     { name = "Jan Pecinovsky", email = "jan@energieid.be" },
     { name = "Max Helskens", email = "max@energieid.be" },
+    { name = "Oscar Swyns", email = "oscar.swyns@energieid.be" },
 ]
 maintainers = [{ name = "Jan Pecinovsky", email = "jan@energieid.be" }]
 description = "Open Source Python library for energy analytics and simulations"
@@ -49,6 +50,8 @@ authors = [
     "Oscar Swyns <oscar@energieid.be>",
 ]
 dependencies.python = "^3.10"
+dependencies.pandera = {extras = ["io", "polars"], version = "^0.20.3"}
+dependencies.polars = "^1.5.0"
 dependencies.numpy = "^2.0.0"
 dependencies.patsy = "^0.5.6"
 dependencies.statsmodels = "^0.14.2"

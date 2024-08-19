@@ -1,11 +1,11 @@
 """Proof of concept of a data analysis module using pandera."""
 
-import pandas as pd
+import polars as pl
 
 
 def analyse(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
+    lf: pl.LazyFrame,
+) -> pl.LazyFrame:
     """Perform analysis on the input data and return the output data."""
     # Perform analysis
-    return df
+    return lf
