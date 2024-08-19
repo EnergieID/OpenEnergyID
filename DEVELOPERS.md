@@ -46,3 +46,10 @@ other option is to run as root from within the `devcontainer.json` `"remoteUser"
 
 [deptry](https://github.com/fpgmaas/deptry) for checking dependencies   
 ```pipx run deptry . --ignore-notebooks```
+
+# Apple Silicon notes
+> ⚠️ note: 
+>        If you’re on an Apple Silicon machine, you’ll need to install [polars](https://pandera.readthedocs.io/en/latest/polars.html) via pip install polars-lts-cpu.
+>       You may have to delete polars if it’s already installed:  
+>       `pip uninstall polars`  
+>       `pip install polars-lts-cpu`
