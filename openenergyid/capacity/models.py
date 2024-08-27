@@ -10,6 +10,7 @@ class CapacityInput(BaseModel):
 
     timezone: str = Field(alias="timeZone")
     series: TimeSeries
+    threshold: float = Field(default=2.5, ge=0)
 
 
 class PeakDetail(BaseModel):

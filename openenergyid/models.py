@@ -63,7 +63,19 @@ class TimeSeriesBase(BaseModel):
 
 
 class TimeSeries(TimeSeriesBase):
-    """Time series data with a single column."""
+    """
+    Represents a time series data.
+    Attributes:
+        name (str | None): The name of the time series.
+        data (list[float | None]): The data points of the time series.
+    Methods:
+        replace_nan_with_none(cls, data: list[float]) -> list[float | None]:
+            Replace NaN values with None.
+        from_pandas(cls, data: pd.Series) -> Self:
+            Create a TimeSeries object from a Pandas Series.
+        to_pandas(self, timezone: str = "UTC") -> pd.Series:
+            Convert the TimeSeries object to a Pandas Series.
+    """
 
     name: str | None = None
     data: list[float | None]
