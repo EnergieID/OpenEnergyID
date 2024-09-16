@@ -41,7 +41,7 @@ line-length = 100
 
 [tool.poetry]
 name = "openenergyid"
-version = "0.1.2" # You'll need to set this manually or use a different method for dynamic versioning
+version = "0.1.18" # You'll need to set this manually or use a different method for dynamic versioning
 description = "Open Source Python library for energy analytics and simulations"
 authors = [
     "Jan Pecinovsky <jan@energieid.be>",
