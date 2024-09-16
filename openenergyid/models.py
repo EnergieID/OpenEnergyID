@@ -6,7 +6,7 @@ from typing import overload
 from typing import Self
 
 import pandas as pd
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 
 class TimeSeriesBase(BaseModel):
@@ -78,13 +78,7 @@ class TimeSeries(TimeSeriesBase):
     """
 
     name: str | None = None
-    data: list[float | None]
-
-    @field_validator("data")
-    @classmethod
-    def replace_nan_with_none(cls, data: list[float]) -> list[float | None]:
-        """Replace NaN values with None."""
-        return [None if pd.isna(value) else value for value in data]
+    data: list[float]
 
     @classmethod
     def from_pandas(cls, data: pd.Series) -> Self:
@@ -102,13 +96,7 @@ class TimeDataFrame(TimeSeriesBase):
     """Time series data with multiple columns."""
 
     columns: list[str]
-    data: list[list[float | None]]
-
-    @field_validator("data")
-    @classmethod
-    def replace_nan_with_none(cls, data: list[list[float]]) -> list[list[float | None]]:
-        """Replace NaN values with None."""
-        return [[None if pd.isna(value) else value for value in row] for row in data]
+    data: list[list[float]]
 
     @classmethod
     def from_pandas(cls, data: pd.DataFrame) -> Self:
