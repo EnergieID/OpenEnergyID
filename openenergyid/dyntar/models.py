@@ -33,6 +33,9 @@ OutputColumns = Literal[
     "heatmap_delivered",
     "heatmap_exported",
     "heatmap_total",
+    "heatmap_delivered_description",
+    "heatmap_exported_description",
+    "heatmap_total_description",
 ]
 
 
@@ -50,7 +53,7 @@ class DynamicTariffAnalysisInput(TimeDataFrame):
             min_length=len(RequiredColumns.__args__),
             max_length=len(RequiredColumns.__args__),
         )  # type: ignore
-    ] = Field(examples=[[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+    ] = Field(examples=[[0.0] * len(RequiredColumns.__args__)])
 
 
 class DynamicTariffAnalysisOutput(TimeDataFrame):
@@ -67,4 +70,4 @@ class DynamicTariffAnalysisOutput(TimeDataFrame):
             min_length=1,
             max_length=len(OutputColumns.__args__),
         )  # type: ignore
-    ] = Field(examples=[[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+    ] = Field(examples=[[0.0] * len(OutputColumns.__args__)])
