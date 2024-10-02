@@ -16,3 +16,7 @@ SPP_WEIGHTED_PRICE_EXPORTED = "spp_weighted_price_exported"
 HEATMAP_DELIVERED = "heatmap_delivered"
 HEATMAP_EXPORTED = "heatmap_exported"
 HEATMAP_TOTAL = "heatmap_total"
+
+HEATMAP_DELIVERED_DESCRIPTION = "heatmap_delivered_description"
+HEATMAP_EXPORTED_DESCRIPTION = "heatmap_exported_description"
+HEATMAP_TOTAL_DESCRIPTION = "heatmap_total_description"
