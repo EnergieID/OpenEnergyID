@@ -1,6 +1,6 @@
 """Open Energy ID Python SDK."""
 
-__version__ = "0.1.17"
+__version__ = "0.1.18"
 
 from .enums import Granularity
 from .models import TimeDataFrame, TimeSeries
