@@ -150,7 +150,6 @@ def extend_dataframe_with_heatmap(df: pd.DataFrame, inplace: bool = False) -> pd
 
     # Invert scores so that positive values indicate a positive impact
     heatmap_score_delivered = -heatmap_score_delivered
-    # heatmap_score_exported = -heatmap_score_exported
     heatmap_score_combined = heatmap_score_delivered + heatmap_score_exported
 
     df[HEATMAP_DELIVERED] = heatmap_score_delivered
