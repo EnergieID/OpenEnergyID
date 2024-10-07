@@ -78,13 +78,7 @@ class TimeSeries(TimeSeriesBase):
     """
 
     name: str | None = None
-    data: list[float | None]
-
-    # @field_validator("data")
-    # @classmethod
-    # def replace_nan_with_none(cls, data: list[float]) -> list[float | None]:
-    #     """Replace NaN values with None."""
-    #     return [None if pd.isna(value) else value for value in data]
+    data: list[float]
 
     @classmethod
     def from_pandas(cls, data: pd.Series) -> Self:
