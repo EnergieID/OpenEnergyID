@@ -32,15 +32,12 @@ from .const import (
 )
 
 
-def weigh_by_monthly_profile(series: pd.Series, profile: pd.Series) -> pd.Series:
+def weigh_by_monthly_profile(df: pd.DataFrame, series_name, profile_name) -> pd.Series:
     """Weigh a time series by a monthly profile."""
-    df = pd.DataFrame({"series": series, "profile": profile})
-    results = []
-    for _, frame in df.groupby(pd.Grouper(freq="MS")):
-        frame = frame.copy()
-        frame["weighted"] = frame["series"].sum() * (frame["profile"] / frame["profile"].sum())
-        results.append(frame)
-    return pd.concat(results)["weighted"]
+    grouped = df.groupby(pd.Grouper(freq="MS"))
+    return grouped[series_name].transform("sum") * grouped[profile_name].transform(
+        lambda x: x / x.sum()
+    )
 
 
 def extend_dataframe_with_smr2(df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame | None:
@@ -50,12 +47,8 @@ def extend_dataframe_with_smr2(df: pd.DataFrame, inplace: bool = False) -> pd.Da
     else:
         result_df = df
 
-    result_df[ELECTRICITY_DELIVERED_SMR2] = weigh_by_monthly_profile(
-        df[ELECTRICITY_DELIVERED], df[RLP]
-    )
-    result_df[ELECTRICITY_EXPORTED_SMR2] = weigh_by_monthly_profile(
-        df[ELECTRICITY_EXPORTED], df[SPP]
-    )
+    result_df[ELECTRICITY_DELIVERED_SMR2] = weigh_by_monthly_profile(df, ELECTRICITY_DELIVERED, RLP)
+    result_df[ELECTRICITY_EXPORTED_SMR2] = weigh_by_monthly_profile(df, ELECTRICITY_EXPORTED, SPP)
 
     result_df.rename(
         columns={
@@ -81,14 +74,14 @@ def extend_dataframe_with_costs(df: pd.DataFrame, inplace: bool = False) -> pd.D
         df[ELECTRICITY_DELIVERED_SMR2] * df[PRICE_ELECTRICITY_DELIVERED]
     )
     result_df[COST_ELECTRICITY_EXPORTED_SMR2] = (
-        df[ELECTRICITY_EXPORTED_SMR2] * df[PRICE_ELECTRICITY_EXPORTED]
+        df[ELECTRICITY_EXPORTED_SMR2] * df[PRICE_ELECTRICITY_EXPORTED] * -1
     )
 
     result_df[COST_ELECTRICITY_DELIVERED_SMR3] = (
         df[ELECTRICITY_DELIVERED_SMR3] * df[PRICE_ELECTRICITY_DELIVERED]
     )
     result_df[COST_ELECTRICITY_EXPORTED_SMR3] = (
-        df[ELECTRICITY_EXPORTED_SMR3] * df[PRICE_ELECTRICITY_EXPORTED]
+        df[ELECTRICITY_EXPORTED_SMR3] * df[PRICE_ELECTRICITY_EXPORTED] * -1
     )
 
     if not inplace:
@@ -161,6 +154,45 @@ def extend_dataframe_with_heatmap(df: pd.DataFrame, inplace: bool = False) -> pd
     return None
 
 
+def map_delivery_description(
+    price_delivered, price_rlp, electricity_delivered_smr3, electricity_delivered_smr2
+):
+    """Map the delivery description."""
+    if price_delivered > price_rlp and electricity_delivered_smr3 > electricity_delivered_smr2:
+        return 1
+    if price_delivered > price_rlp and electricity_delivered_smr3 < electricity_delivered_smr2:
+        return 2
+    if price_delivered < price_rlp and electricity_delivered_smr3 > electricity_delivered_smr2:
+        return 3
+    if price_delivered < price_rlp and electricity_delivered_smr3 < electricity_delivered_smr2:
+        return 4
+    return 0
+
+
+def map_export_description(
+    price_exported, price_spp, electricity_exported_smr3, electricity_exported_smr2
+):
+    """Map the export description."""
+    if price_exported > price_spp and electricity_exported_smr3 > electricity_exported_smr2:
+        return 5
+    if price_exported > price_spp and electricity_exported_smr3 < electricity_exported_smr2:
+        return 6
+    if price_exported < price_spp and electricity_exported_smr3 > electricity_exported_smr2:
+        return 7
+    if price_exported < price_spp and electricity_exported_smr3 < electricity_exported_smr2:
+        return 8
+    return 0
+
+
+def map_total_description(
+    abs_heatmap_delivered, abs_heatmap_exported, delivered_description, exported_description
+):
+    """Map the total description."""
+    if abs_heatmap_delivered > abs_heatmap_exported:
+        return delivered_description
+    return exported_description
+
+
 def extend_dataframe_with_heatmap_description(
     df: pd.DataFrame, inplace: bool = False
 ) -> pd.DataFrame | None:
@@ -168,104 +200,34 @@ def extend_dataframe_with_heatmap_description(
     if not inplace:
         df = df.copy()
 
-    # Delivered
+    df[HEATMAP_DELIVERED_DESCRIPTION] = list(
+        map(
+            map_delivery_description,
+            df[PRICE_ELECTRICITY_DELIVERED],
+            df[RLP_WEIGHTED_PRICE_DELIVERED],
+            df[ELECTRICITY_DELIVERED_SMR3],
+            df[ELECTRICITY_DELIVERED_SMR2],
+        )
+    )
+    df[HEATMAP_EXPORTED_DESCRIPTION] = list(
+        map(
+            map_export_description,
+            df[PRICE_ELECTRICITY_EXPORTED],
+            df[SPP_WEIGHTED_PRICE_EXPORTED],
+            df[ELECTRICITY_EXPORTED_SMR3],
+            df[ELECTRICITY_EXPORTED_SMR2],
+        )
+    )
 
-    # Where Heatmap is 0, we put a desription of 0 (No impact)
-    df[HEATMAP_DELIVERED_DESCRIPTION] = df[HEATMAP_DELIVERED].apply(
-        lambda x: 0 if x == 0 else float("NaN")
+    df[HEATMAP_TOTAL_DESCRIPTION] = list(
+        map(
+            map_total_description,
+            df[HEATMAP_DELIVERED].abs(),
+            df[HEATMAP_EXPORTED].abs(),
+            df[HEATMAP_DELIVERED_DESCRIPTION],
+            df[HEATMAP_EXPORTED_DESCRIPTION],
+        )
     )
-    # When the energy delta is positive, and the price delta is positive, we put a description of 1 (high consumption, high price)
-    df[HEATMAP_DELIVERED_DESCRIPTION] = df.apply(
-        lambda x: 1
-        if x[PRICE_ELECTRICITY_DELIVERED] > x[RLP_WEIGHTED_PRICE_DELIVERED]
-        and x[ELECTRICITY_DELIVERED_SMR3] > x[ELECTRICITY_DELIVERED_SMR2]
-        else x[HEATMAP_DELIVERED_DESCRIPTION],
-        axis=1,
-    )
-    # When the energy delta is negative, and the price delta is positive, we put a description of 2 (low consumption, high price)
-    df[HEATMAP_DELIVERED_DESCRIPTION] = df.apply(
-        lambda x: 2
-        if x[PRICE_ELECTRICITY_DELIVERED] > x[RLP_WEIGHTED_PRICE_DELIVERED]
-        and x[ELECTRICITY_DELIVERED_SMR3] < x[ELECTRICITY_DELIVERED_SMR2]
-        else x[HEATMAP_DELIVERED_DESCRIPTION],
-        axis=1,
-    )
-    # When the energy delta is positive, and the price delta is negative, we put a description of 3 (high consumption, low price)
-    df[HEATMAP_DELIVERED_DESCRIPTION] = df.apply(
-        lambda x: 3
-        if x[PRICE_ELECTRICITY_DELIVERED] < x[RLP_WEIGHTED_PRICE_DELIVERED]
-        and x[ELECTRICITY_DELIVERED_SMR3] > x[ELECTRICITY_DELIVERED_SMR2]
-        else x[HEATMAP_DELIVERED_DESCRIPTION],
-        axis=1,
-    )
-    # When the energy delta is negative, and the price delta is negative, we put a description of 4 (low consumption, low price)
-    df[HEATMAP_DELIVERED_DESCRIPTION] = df.apply(
-        lambda x: 4
-        if x[PRICE_ELECTRICITY_DELIVERED] < x[RLP_WEIGHTED_PRICE_DELIVERED]
-        and x[ELECTRICITY_DELIVERED_SMR3] < x[ELECTRICITY_DELIVERED_SMR2]
-        else x[HEATMAP_DELIVERED_DESCRIPTION],
-        axis=1,
-    )
-    # All other cases are put as 0
-    df[HEATMAP_DELIVERED_DESCRIPTION] = df[HEATMAP_DELIVERED_DESCRIPTION].replace(np.nan, 0)
-
-    # Exported
-
-    # Where Heatmap is 0, we put a desription of 0 (No impact)
-    df[HEATMAP_EXPORTED_DESCRIPTION] = df[HEATMAP_EXPORTED].apply(
-        lambda x: 0 if x == 0 else float("NaN")
-    )
-    # When the energy delta is positive, and the price delta is positive, we put a description of 5 (high injection, high price)
-    df[HEATMAP_EXPORTED_DESCRIPTION] = df.apply(
-        lambda x: 5
-        if x[PRICE_ELECTRICITY_EXPORTED] > x[SPP_WEIGHTED_PRICE_EXPORTED]
-        and x[ELECTRICITY_EXPORTED_SMR3] > x[ELECTRICITY_EXPORTED_SMR2]
-        else x[HEATMAP_EXPORTED_DESCRIPTION],
-        axis=1,
-    )
-    # When the energy delta is negative, and the price delta is positive, we put a description of 6 (low injection, high price)
-    df[HEATMAP_EXPORTED_DESCRIPTION] = df.apply(
-        lambda x: 6
-        if x[PRICE_ELECTRICITY_EXPORTED] > x[SPP_WEIGHTED_PRICE_EXPORTED]
-        and x[ELECTRICITY_EXPORTED_SMR3] < x[ELECTRICITY_EXPORTED_SMR2]
-        else x[HEATMAP_EXPORTED_DESCRIPTION],
-        axis=1,
-    )
-    # When the energy delta is positive, and the price delta is negative, we put a description of 7 (high injection, low price)
-    df[HEATMAP_EXPORTED_DESCRIPTION] = df.apply(
-        lambda x: 7
-        if x[PRICE_ELECTRICITY_EXPORTED] < x[SPP_WEIGHTED_PRICE_EXPORTED]
-        and x[ELECTRICITY_EXPORTED_SMR3] > x[ELECTRICITY_EXPORTED_SMR2]
-        else x[HEATMAP_EXPORTED_DESCRIPTION],
-        axis=1,
-    )
-    # When the energy delta is negative, and the price delta is negative, we put a description of 8 (low injection, low price)
-    df[HEATMAP_EXPORTED_DESCRIPTION] = df.apply(
-        lambda x: 8
-        if x[PRICE_ELECTRICITY_EXPORTED] < x[SPP_WEIGHTED_PRICE_EXPORTED]
-        and x[ELECTRICITY_EXPORTED_SMR3] < x[ELECTRICITY_EXPORTED_SMR2]
-        else x[HEATMAP_EXPORTED_DESCRIPTION],
-        axis=1,
-    )
-    # All other cases are put as 0
-    df[HEATMAP_EXPORTED_DESCRIPTION] = df[HEATMAP_EXPORTED_DESCRIPTION].replace(np.nan, 0)
-
-    # Total
-
-    # We see which of the individual heatmaps has the highest absolute value
-    # We put the description of the highest absolute value
-    df[HEATMAP_TOTAL_DESCRIPTION] = df.apply(
-        lambda x: x[HEATMAP_DELIVERED_DESCRIPTION]
-        if abs(x[HEATMAP_DELIVERED]) > abs(x[HEATMAP_EXPORTED])
-        else x[HEATMAP_EXPORTED_DESCRIPTION],
-        axis=1,
-    )
-    # Where Heatmap is 0, we put a desription of 0 (No impact)
-    df[HEATMAP_TOTAL_DESCRIPTION] = df.apply(
-        lambda x: 0 if x[HEATMAP_TOTAL] == 0 else x[HEATMAP_TOTAL_DESCRIPTION], axis=1
-    )
-    # All other cases are put as 0
-    df[HEATMAP_TOTAL_DESCRIPTION] = df[HEATMAP_TOTAL_DESCRIPTION].replace(np.nan, 0)
 
     if not inplace:
         return df
