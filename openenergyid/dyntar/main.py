@@ -1,7 +1,6 @@
 """Main module of the DynTar package."""
 
 from typing import cast
-import numpy as np
 import pandas as pd
 
 from openenergyid.const import (
@@ -154,31 +153,18 @@ def extend_dataframe_with_heatmap(
         registers = [Register.DELIVERY, Register.EXPORT]
 
     if Register.DELIVERY in registers:
-        normalized_energy_delta_delivered = (
-            df[ELECTRICITY_DELIVERED_SMR2] - df[ELECTRICITY_DELIVERED_SMR3]
-        ) / df[ELECTRICITY_DELIVERED_SMR2]
-        normalized_price_delta_delivered = (
-            df[RLP_WEIGHTED_PRICE_DELIVERED] - df[PRICE_ELECTRICITY_DELIVERED]
-        ) / df[RLP_WEIGHTED_PRICE_DELIVERED]
-        heatmap_score_delivered = (
-            normalized_energy_delta_delivered * normalized_price_delta_delivered
-        )
+        energy_delta_delivered = df[ELECTRICITY_DELIVERED_SMR2] - df[ELECTRICITY_DELIVERED_SMR3]
+        price_delta_delivered = df[RLP_WEIGHTED_PRICE_DELIVERED] - df[PRICE_ELECTRICITY_DELIVERED]
+        heatmap_score_delivered = energy_delta_delivered * price_delta_delivered
         heatmap_score_delivered.fillna(0, inplace=True)
         # Invert score so that positive values indicate a positive impact
         heatmap_score_delivered = -heatmap_score_delivered
         df[HEATMAP_DELIVERED] = heatmap_score_delivered
 
     if Register.EXPORT in registers:
-        normalized_energy_delta_exported = (
-            df[ELECTRICITY_EXPORTED_SMR2] - df[ELECTRICITY_EXPORTED_SMR3]
-        ) / df[ELECTRICITY_EXPORTED_SMR2]
-        normalized_energy_delta_exported = normalized_energy_delta_exported.replace(
-            [np.inf, -np.inf], np.nan
-        )
-        normalized_price_delta_exported = (
-            df[SPP_WEIGHTED_PRICE_EXPORTED] - df[PRICE_ELECTRICITY_EXPORTED]
-        ) / df[SPP_WEIGHTED_PRICE_EXPORTED]
-        heatmap_score_exported = normalized_energy_delta_exported * normalized_price_delta_exported
+        energy_delta_exported = df[ELECTRICITY_EXPORTED_SMR2] - df[ELECTRICITY_EXPORTED_SMR3]
+        price_delta_exported = df[SPP_WEIGHTED_PRICE_EXPORTED] - df[PRICE_ELECTRICITY_EXPORTED]
+        heatmap_score_exported = energy_delta_exported * price_delta_exported
         heatmap_score_exported.fillna(0, inplace=True)
         df[HEATMAP_EXPORTED] = heatmap_score_exported
 
