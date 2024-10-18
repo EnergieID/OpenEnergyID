@@ -1,5 +1,7 @@
 """Constants for the dyntar analysis."""
 
+from enum import Enum
+
 ELECTRICITY_DELIVERED_SMR3 = "electricity_delivered_smr3"
 ELECTRICITY_EXPORTED_SMR3 = "electricity_exported_smr3"
 ELECTRICITY_DELIVERED_SMR2 = "electricity_delivered_smr2"
@@ -20,3 +22,10 @@ HEATMAP_TOTAL = "heatmap_total"
 HEATMAP_DELIVERED_DESCRIPTION = "heatmap_delivered_description"
 HEATMAP_EXPORTED_DESCRIPTION = "heatmap_exported_description"
 HEATMAP_TOTAL_DESCRIPTION = "heatmap_total_description"
+
+
+class Register(Enum):
+    """Register for dynamic tariff analysis."""
+
+    DELIVERY = "delivery"
+    EXPORT = "export"
