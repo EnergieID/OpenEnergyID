@@ -20,6 +20,7 @@ repos:
     rev: v4.6.0
     hooks:
       - id: mixed-line-ending
+        args: [--fix=lf] # Force LF line endings
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
