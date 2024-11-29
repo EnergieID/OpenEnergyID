@@ -4,6 +4,8 @@
   "features": {},
   "postCreateCommand": "zsh -l .devcontainer/post-install.sh",
   // "postStartCommand": "",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "remoteUser": "root",
   "customizations": {
     "vscode": {
