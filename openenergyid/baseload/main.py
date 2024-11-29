@@ -2,6 +2,7 @@
 This module provides functionality for loading, validating, and analyzing energy usage data.
 
 Classes:
+    TimeFrame: An enumeration of different timeframes for data aggregation.
     BaseLoadMetrics: A NamedTuple container for base load analysis metrics.
     EnergySchema: A pandera DataFrameModel for validating energy usage data.
 
@@ -9,27 +10,33 @@ Functions:
     load_data(path: str) -> pl.LazyFrame:
         Loads and validates energy usage data from an NDJSON file.
 
-    calculate_base_load(lf: pl.LazyFrame) -> BaseLoadMetrics:
-        Calculates base load metrics from energy usage data.
+    calculate_base_load(lf: pl.LazyFrame, timeframe: TimeFrame = TimeFrame.DAILY) -> pl.DataFrame:
+        Calculates base load metrics from energy usage data aggregated by the specified timeframe.
 
-    main(file_path: str) -> BaseLoadMetrics:
-        Processes energy data and returns base load metrics.
-
-    test_energy_validation():
-        Tests various data validation scenarios using pytest.
+    main(file_path: str, timeframe: TimeFrame) -> pl.DataFrame:
+        Processes energy data and returns base load metrics for the specified timeframe.
 """
 
+from enum import Enum
 from typing import NamedTuple
 import polars as pl
 import pandera.polars as pa
 ## VERY important to use pandera.polars instead of pandera to avoid pandas errors
 
 
+class TimeFrame(Enum):
+    HOURLY = "1h"
+    DAILY = "1d"
+    WEEKLY = "1w"
+    MONTHLY = "1mo"
+    YEARLY = "1y"
+
+
 class BaseLoadMetrics(NamedTuple):
     """Container for base load analysis metrics"""
 
-    base_load_watts: float  # Average base load in watts
-    daily_usage_kwh: float  # Average daily usage in kWh
+    base_load_watts: float  # Base load in watts
+    usage_kwh: float  # Usage in kWh for the period
     base_percentage: float  # Base load as percentage of total
 
 
@@ -67,48 +74,36 @@ def load_data(path: str) -> pl.LazyFrame:
     return pl.LazyFrame(validated_df)
 
 
-def calculate_base_load(lf: pl.LazyFrame) -> BaseLoadMetrics:
-    """
-    Calculate base load metrics from energy usage data.
-
-    Takes lowest 10 totals per day to determine base load.
-    Returns watts, kwh, and percentage metrics.
-    """
-    metrics_df = (
+def calculate_base_load(lf: pl.LazyFrame, timeframe: TimeFrame = TimeFrame.DAILY) -> pl.DataFrame:
+    """Calculate base load metrics aggregated by specified timeframe"""
+    return (
         lf.filter(pl.col("total") >= 0)
         .sort("timestamp")
-        .group_by_dynamic("timestamp", every="1d")
+        .group_by_dynamic("timestamp", every=timeframe.value)
         .agg(
             [
-                pl.col("total").sum().alias("total_daily_usage"),
-                (pl.col("total").sort().head(10).mean() * 4 * 24).alias("base_load_daily_kwh"),
+                pl.col("total").sum().alias("total_usage"),
+                (pl.col("total").sort().head(10).mean() * 4 * 24).alias("base_load_kwh"),
+                pl.col("timestamp").first().alias("period_start"),
             ]
         )
         .with_columns(
             [
-                (pl.col("base_load_daily_kwh") / pl.col("total_daily_usage") * 100).alias(
-                    "base_percentage"
-                )
+                (pl.col("base_load_kwh") / pl.col("total_usage") * 100).alias("base_percentage"),
+                (pl.col("base_load_kwh") * 1000 / 24).alias("base_load_watts"),
             ]
         )
-        .select(
-            [
-                pl.col("base_load_daily_kwh").mean().alias("avg_daily_kwh"),
-                (pl.col("base_load_daily_kwh") * 1000 / 24).mean().alias("avg_watts"),
-                pl.col("base_percentage").mean().alias("avg_percentage"),
-            ]
-        )
-        .collect()  # TODO add validation for input data: correct format, not null, etc.
-    )
-
-    return BaseLoadMetrics(
-        base_load_watts=metrics_df[0, "avg_watts"],
-        daily_usage_kwh=metrics_df[0, "avg_daily_kwh"],
-        base_percentage=metrics_df[0, "avg_percentage"],
+        .sort("period_start")
+        .collect()
     )
 
 
-def main(file_path: str) -> BaseLoadMetrics:
-    """Process energy data and return base load metrics"""
-    lf = load_data(file_path)
-    return calculate_base_load(lf)
+def main(file_path: str, timeframe: TimeFrame) -> pl.DataFrame:
+    """Process energy data and return base load metrics for specified timeframe"""
+    return calculate_base_load(load_data(file_path), timeframe)
+
+
+# Example usage:
+if __name__ == "__main__":
+    results = main("data/energy_use.ndjson", TimeFrame.MONTHLY)
+    print(results)
