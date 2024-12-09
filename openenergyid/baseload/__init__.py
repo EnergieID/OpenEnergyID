@@ -5,6 +5,7 @@ from .main import (
     EnergySchema,
     load_data,
     calculate_base_load,
+    Granularity,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "EnergySchema",
     "load_data",
     "calculate_base_load",
+    "Granularity",
 ]

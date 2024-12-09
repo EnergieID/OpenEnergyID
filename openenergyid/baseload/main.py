@@ -10,26 +10,27 @@ Functions:
     load_data(path: str) -> pl.LazyFrame:
         Loads and validates energy usage data from an NDJSON file.
 
-    calculate_base_load(lf: pl.LazyFrame, timeframe: TimeFrame = TimeFrame.DAILY) -> pl.DataFrame:
-        Calculates base load metrics from energy usage data aggregated by the specified timeframe.
+    calculate_base_load(lf: pl.LazyFrame, granularity: Granularity = Granularity.DAILY) -> pl.DataFrame:
+        Calculates base load metrics from energy usage data aggregated by the specified granularity.
 
-    main(file_path: str, timeframe: TimeFrame) -> pl.DataFrame:
-        Processes energy data and returns base load metrics for the specified timeframe.
+    main(file_path: str, granularity: Granularity) -> pl.DataFrame:
+        Processes energy data and returns base load metrics for the specified granularity.
 """
 
-from enum import Enum
 from typing import NamedTuple
 import polars as pl
 import pandera.polars as pa
+from openenergyid.enums import Granularity
 ## VERY important to use pandera.polars instead of pandera to avoid pandas errors
 
-
-class TimeFrame(Enum):
-    HOURLY = "1h"
-    DAILY = "1d"
-    WEEKLY = "1w"
-    MONTHLY = "1mo"
-    YEARLY = "1y"
+# Map Granularity to polars format
+GRANULARITY_TO_POLARS = {
+    Granularity.PT15M: "15m",
+    Granularity.PT1H: "1h",
+    Granularity.P1D: "1d",
+    Granularity.P1M: "1mo",
+    Granularity.P1Y: "1y",
+}
 
 
 class BaseLoadMetrics(NamedTuple):
@@ -74,12 +75,15 @@ def load_data(path: str) -> pl.LazyFrame:
     return pl.LazyFrame(validated_df)
 
 
-def calculate_base_load(lf: pl.LazyFrame, timeframe: TimeFrame = TimeFrame.DAILY) -> pl.DataFrame:
-    """Calculate base load metrics aggregated by specified timeframe"""
+def calculate_base_load(
+    lf: pl.LazyFrame, granularity: Granularity = Granularity.P1D
+) -> pl.DataFrame:
+    """Calculate base load metrics aggregated by specified granularity"""
+    polars_interval = GRANULARITY_TO_POLARS[granularity]
     return (
         lf.filter(pl.col("total") >= 0)
         .sort("timestamp")
-        .group_by_dynamic("timestamp", every=timeframe.value)
+        .group_by_dynamic("timestamp", every=polars_interval)
         .agg(
             [
                 pl.col("total").sum().alias("total_usage"),
@@ -98,12 +102,12 @@ def calculate_base_load(lf: pl.LazyFrame, timeframe: TimeFrame = TimeFrame.DAILY
     )
 
 
-def main(file_path: str, timeframe: TimeFrame) -> pl.DataFrame:
-    """Process energy data and return base load metrics for specified timeframe"""
-    return calculate_base_load(load_data(file_path), timeframe)
+def main(file_path: str, granularity: Granularity) -> pl.DataFrame:
+    """Process energy data and return base load metrics for specified granularity"""
+    return calculate_base_load(load_data(file_path), granularity)
 
 
 # Example usage:
 if __name__ == "__main__":
-    results = main("data/energy_use.ndjson", TimeFrame.MONTHLY)
+    results = main("data/PP/energy_use_test1.ndjson", Granularity.P1M)
     print(results)
