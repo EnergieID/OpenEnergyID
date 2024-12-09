@@ -3,15 +3,15 @@
 from .main import (
     BaseLoadMetrics,
     EnergySchema,
-    load_data,
-    calculate_base_load,
+    load_energy_data,
+    analyze_base_load,
     Granularity,
 )
 
 __all__ = [
     "BaseLoadMetrics",
     "EnergySchema",
-    "load_data",
-    "calculate_base_load",
+    "load_energy_data",
+    "analyze_base_load",
     "Granularity",
 ]
