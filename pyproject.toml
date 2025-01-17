@@ -48,7 +48,7 @@ authors = [
     "Max Helskens <max@energieid.be>",
     "Oscar Swyns <oscar@energieid.be>",
 ]
-dependencies.python = "^3.10"
+dependencies.python = "^3.11"
 dependencies.polars = "^1.9.0"
 dependencies.pandera = "^0.20.3"
 dependencies.numpy = "^2.0.0"
