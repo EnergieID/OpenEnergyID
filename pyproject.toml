@@ -50,7 +50,6 @@ authors = [
     "Oscar Swyns <oscar@energieid.be>",
 ]
 dependencies.python = "^3.11"
-dependencies.pyarrow = "^18.1.0"
 dependencies.polars = "^1.9.0"
 dependencies.pandera = "^0.20.3"
 dependencies.numpy = "^2.0.0"
