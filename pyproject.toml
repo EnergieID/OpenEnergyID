@@ -39,6 +39,7 @@ path = "openenergyid/__init__.py"
 [tool.ruff]
 line-length = 100
 
+
 [tool.poetry]
 name = "openenergyid"
 version = "0.1.20" # You'll need to set this manually or use a different method for dynamic versioning
@@ -68,3 +69,6 @@ entsoe-py = "^0.6.8"
 energyid = "^0.0.17"
 snakeviz = "^2.2.0"
 plotly = "^5.24.1"
+
+[tool.poetry.requires-plugins]
+poetry-plugin-export = ">=1.8"
