@@ -1,17 +1,15 @@
-"""Base Load analysis for Open Energy ID."""
+"""Baseload analysis package for power consumption data."""
 
-from .main import (
-    BaseLoadMetrics,
-    EnergySchema,
-    load_energy_data,
-    analyze_base_load,
-    Granularity,
-)
+from .models import PowerReadingSchema, PowerSeriesSchema, BaseloadResultSchema
+from .analysis import BaseloadAnalyzer
+from .exceptions import InsufficientDataError, InvalidDataError
 
+__version__ = "0.1.0"
 __all__ = [
-    "BaseLoadMetrics",
-    "EnergySchema",
-    "load_energy_data",
-    "analyze_base_load",
-    "Granularity",
+    "BaseloadAnalyzer",
+    "InsufficientDataError",
+    "InvalidDataError",
+    "PowerReadingSchema",
+    "PowerSeriesSchema",
+    "BaseloadResultSchema",
 ]
