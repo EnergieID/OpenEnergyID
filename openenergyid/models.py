@@ -7,6 +7,7 @@ from typing import Self
 
 import pandas as pd
 from pydantic import BaseModel
+import polars as pl
 
 
 class TimeSeriesBase(BaseModel):
@@ -75,10 +76,14 @@ class TimeSeries(TimeSeriesBase):
             Create a TimeSeries object from a Pandas Series.
         to_pandas(self, timezone: str = "UTC") -> pd.Series:
             Convert the TimeSeries object to a Pandas Series.
+        from_polars(cls, data: pl.DataFrame | pl.LazyFrame) -> Self:
+            Create a TimeSeries object from Polars data.
+        to_polars(self, timezone: str = "UTC") -> pl.LazyFrame:
+            Convert the TimeSeries object to a Polars LazyFrame.
     """
 
     name: str | None = None
-    data: list[float]
+    data: list[float | None]
 
     @classmethod
     def from_pandas(cls, data: pd.Series) -> Self:
@@ -91,19 +96,50 @@ class TimeSeries(TimeSeriesBase):
         series.index = pd.to_datetime(series.index, utc=True)
         return series.tz_convert(timezone)
 
+    @classmethod
+    def from_polars(cls, data: pl.DataFrame | pl.LazyFrame) -> Self:
+        """Create from Polars data."""
+        # Always work with DataFrame
+        df = data.collect() if isinstance(data, pl.LazyFrame) else data
+
+        if len(df.columns) != 2:
+            raise ValueError("Must contain exactly two columns: timestamp and value")
+
+        value_col = [col for col in df.columns if col != "timestamp"][0]
+        return cls(
+            name=value_col,
+            data=df[value_col].cast(pl.Float64).to_list(),  # Ensure float type
+            index=df["timestamp"].cast(pl.Datetime).dt.convert_time_zone("UTC").to_list(),
+        )
+
+    def to_polars(self, timezone: str = "UTC") -> pl.LazyFrame:
+        """Convert to Polars LazyFrame."""
+        # Always return LazyFrame as specified in return type
+        df = pl.DataFrame(
+            {
+                "timestamp": pl.Series(self.index, dtype=pl.Datetime).dt.convert_time_zone(
+                    timezone
+                ),
+                "total" if self.name is None else self.name: pl.Series(self.data, dtype=pl.Float64),
+            }
+        )
+        return df.lazy()
+
 
 class TimeDataFrame(TimeSeriesBase):
     """Time series data with multiple columns."""
 
     columns: list[str]
-    data: list[list[float]]
+    data: list[list[float | None]]
 
     @classmethod
     def from_pandas(cls, data: pd.DataFrame) -> Self:
         """Create from a Pandas DataFrame."""
-        return cls(
-            columns=data.columns.tolist(), data=data.values.tolist(), index=data.index.tolist()
-        )
+        # Cast values to float | None
+        values = [
+            [float(x) if pd.notnull(x) else None for x in row] for row in data.values.tolist()
+        ]
+        return cls(columns=data.columns.tolist(), data=values, index=data.index.tolist())
 
     def to_pandas(self, timezone: str = "UTC") -> pd.DataFrame:
         """Convert to a Pandas DataFrame."""
@@ -114,15 +150,15 @@ class TimeDataFrame(TimeSeriesBase):
     @classmethod
     def from_timeseries(cls, data: list[TimeSeries]) -> Self:
         """Create from a list of TimeSeries objects."""
-        return cls.model_construct(
-            columns=[series.name for series in data],
-            data=[series.data for series in data],
+        return cls(
+            columns=[series.name or "" for series in data],  # Handle None names
+            data=[series.data for series in data],  # Pass list of value lists
             index=data[0].index,
         )
 
     def to_timeseries(self) -> list[TimeSeries]:
         """Convert to a list of TimeSeries objects."""
         return [
-            TimeSeries(name=column, data=column_data, index=self.index)
-            for column, column_data in zip(self.columns, self.data)
+            TimeSeries(name=col, data=[row[i] for row in self.data], index=self.index)
+            for i, col in enumerate(self.columns)
         ]
