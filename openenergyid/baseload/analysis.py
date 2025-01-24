@@ -91,71 +91,79 @@ class BaseloadAnalyzer:
         )
 
     def analyze(self, power_lf: pl.LazyFrame, reporting_granularity: str = "1h") -> pl.LazyFrame:
-        """Analyzes power consumption patterns to determine baseload characteristics.
+        """Analyze power consumption data to calculate baseload and total energy metrics.
+
+        Takes power readings (in watts) with 15-minute intervals and calculates:
+        - Daily baseload power using a percentile threshold
+        - Energy consumption from baseload vs total consumption
+        - Average power metrics
+
+        The analysis happens in three steps:
+        1. Calculate the daily baseload power level using the configured percentile
+        2. Join this daily baseload with the original power readings
+        3. Aggregate the combined data into the requested reporting periods
 
         Parameters
         ----------
         power_lf : pl.LazyFrame
-            Power consumption data from prepare_power_seriespolars()
+            Power consumption data with columns:
+            - timestamp: Datetime in configured timezone
+            - power: Power readings in watts
 
         reporting_granularity : str, default="1h"
-            Time period for aggregating results. Supported values:
-            - "1h": Hourly analysis
-            - "1d": Daily analysis
-            - "1w": Weekly analysis
-            - "1mo": Monthly analysis
-            - "1q": Quarterly analysis
-            - "1y": Yearly analysis
+            Time period for aggregating results. Must be a valid Polars interval string
+            like "1h", "1d", "1mo" etc.
 
         Returns
         -------
         pl.LazyFrame
-            Analysis results with columns:
-            - timestamp: Start of each reporting period
-            - consumption_due_to_baseload_in_kilowatthour: Energy used by baseload
-            - total_consumption_in_kilowatthour: Total energy consumed
+            Analysis results with metrics per reporting period:
+            - timestamp: Start of reporting period
+            - consumption_due_to_baseload_in_kilowatthour: Baseload energy
+            - total_consumption_in_kilowatthour: Total energy
             - consumption_not_due_to_baseload_in_kilowatthour: Non-baseload energy
-            - average_daily_baseload_in_watt: Baseload as average power
-            - average_power_in_watt: Average total power consumption
-            - baseload_ratio: Fraction of energy consumed by baseload
-
-        Notes
-        -----
-        Baseload calculation steps:
-        1. Calculates daily baseload using configured quantile of lowest readings
-        2. Joins baseload values with original power data
-        3. Aggregates to requested reporting period
-        4. Computes derived metrics like ratios and differences
-
-        The baseload_ratio typically ranges from 0.2-0.4 (20-40%) for residential
-        settings. Higher ratios may indicate opportunities for energy savings.
+            - average_daily_baseload_in_watt: Average baseload power level
+            - average_power_in_watt: Average total power
+            - baseload_ratio: Fraction of energy from baseload
         """
-        # Calculate daily baseload
+        # Step 1: Calculate the daily baseload level
+        # Group power readings by day and find the threshold power level that represents baseload
         daily_baseload = power_lf.group_by_dynamic("timestamp", every="1d").agg(
             pl.col("power").quantile(self.quantile).alias("daily_baseload")
         )
 
-        # Join and aggregate
+        # Step 2 & 3: Join baseload data and aggregate metrics
         return (
+            # Join the daily baseload level with original power readings
+            # Using asof join since baseload changes daily but readings are every 15min
             power_lf.join_asof(daily_baseload, on="timestamp")
+            # Group into requested reporting periods
             .group_by_dynamic("timestamp", every=reporting_granularity)
             .agg(
                 [
-                    # Convert watt to kilowatthour (divide by 1000 for kW, multiply by 1h)
-                    (pl.col("daily_baseload").mean() / 1000).alias(
+                    # Energy calculations:
+                    # Each 15min power reading (watts) represents 0.25 hours
+                    # Convert to kWh: watts * 0.25h * (1kW/1000W)
+                    (pl.col("daily_baseload").sum() * 0.25 / 1000).alias(
                         "consumption_due_to_baseload_in_kilowatthour"
                     ),
-                    (pl.col("power").mean() / 1000).alias("total_consumption_in_kilowatthour"),
+                    (pl.col("power").sum() * 0.25 / 1000).alias(
+                        "total_consumption_in_kilowatthour"
+                    ),
+                    # Average power levels during the period
                     pl.col("daily_baseload").mean().alias("average_daily_baseload_in_watt"),
                     pl.col("power").mean().alias("average_power_in_watt"),
                 ]
             )
+            # Calculate derived metrics
             .with_columns(
                 [
+                    # Energy consumed above baseload level
                     (
                         pl.col("total_consumption_in_kilowatthour")
                         - pl.col("consumption_due_to_baseload_in_kilowatthour")
                     ).alias("consumption_not_due_to_baseload_in_kilowatthour"),
+                    # What fraction of total energy was from baseload
                     (
                         pl.col("consumption_due_to_baseload_in_kilowatthour")
                         / pl.col("total_consumption_in_kilowatthour")
