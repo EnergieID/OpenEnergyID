@@ -17,8 +17,27 @@ repos:
       - id: pyupgrade
         args: [--py311-plus]
 
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: "" # Use the sha / tag you want to point at
-  #   hooks:
-  #     - id: mypy
-  #       args: [--strict, --ignore-missing-imports]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: mixed-line-ending
+        args: [--fix=lf] # Force LF line endings
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: poetry-export-prod
+        name: Poetry export production requirements
+        entry: poetry export -f requirements.txt --output requirements.txt --without-hashes
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|poetry\.lock)$
+      - id: poetry-export-dev
+        name: Poetry export development requirements
+        entry: poetry export -f requirements.txt --output requirements-dev.txt --without-hashes --only dev
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|poetry\.lock)$

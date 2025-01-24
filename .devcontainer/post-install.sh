@@ -11,14 +11,12 @@ poetry install
 # Install pre-commit hooks
 pre-commit install
 
-# Install Node.js and Pure prompt
-# nvm install node
-# npm install --global pure-prompt
+# Install ZSH plugins
+git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
+git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
 
-# # Configure Zsh to use Pure prompt
-# "autoload -U promptinit; promptinit; prompt pure"
-# "echo "autoload -U promptinit; promptinit; prompt pure" >> ~/.zshrc"
+# Update .zshrc to enable plugins
+sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' ~/.zshrc
 
-# # Uncomment the following line to install zsh-syntax-highlighting
-# # sudo apt-get install zsh-syntax-highlighting
-# # echo "source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" >> ${ZDOTDIR:-$HOME}/.zshrc
+# Source the updated configuration
+source ~/.zshrc
