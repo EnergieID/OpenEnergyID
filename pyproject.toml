@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "openenergyid"
-version = "0.1.21"
+version = "0.1.26"
 description = "Open Source Python library for energy analytics and simulations"
 authors = [
     "Jan Pecinovsky <jan@energieid.be>",
