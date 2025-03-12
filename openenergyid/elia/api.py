@@ -44,7 +44,10 @@ async def get_dataset(
     select_str = ",".join(select)
 
     params = {
-        "where": f"datetime IN [date'{start.strftime(DATE_FORMAT)}'..date'{end.strftime(DATE_FORMAT)}'] AND region='{region.value}'",
+        "where": (
+            f"datetime IN [date'{start.strftime(DATE_FORMAT)}'..date'{end.strftime(DATE_FORMAT)}'] "
+            f"AND region='{region.value}'"
+        ),
         "timezone": timezone,
         "select": select_str,
     }
@@ -62,13 +65,16 @@ def parse_response(
     Parses a response dictionary into a pandas DataFrame.
 
     Args:
-        data (dict): The input data where each key is a column name and each value is a list of column values.
+        data (dict): The input data where each key is a column name
+            and each value is a list of column values.
         index (str): The key in the data dictionary to be used as the index for the DataFrame.
         columns (list[str]): The list of column names for the DataFrame.
-        timezone (str, optional): The timezone to convert the DataFrame index to. Defaults to "Europe/Brussels".
+        timezone (str, optional): The timezone to convert the DataFrame index to.
+            Defaults to "Europe/Brussels".
 
     Returns:
-        pd.DataFrame: A pandas DataFrame with the specified columns and index, converted to the specified timezone.
+        pd.DataFrame: A pandas DataFrame with the specified columns and index,
+            converted to the specified timezone.
     """
     df = pd.DataFrame(
         data,
