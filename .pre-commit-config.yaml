@@ -27,17 +27,19 @@ repos:
       - id: trailing-whitespace
       - id: check-added-large-files
 
-  - repo: local
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.6.16
     hooks:
-      - id: poetry-export-prod
-        name: Poetry export production requirements
-        entry: poetry export -f requirements.txt --output requirements.txt --without-hashes
-        language: system
-        pass_filenames: false
-        files: ^(pyproject\.toml|poetry\.lock)$
-      - id: poetry-export-dev
-        name: Poetry export development requirements
-        entry: poetry export -f requirements.txt --output requirements-dev.txt --without-hashes --only dev
-        language: system
-        pass_filenames: false
-        files: ^(pyproject\.toml|poetry\.lock)$
+      - id: uv-export
+        args:
+          - --no-hashes
+          - --output-file=requirements.txt
+          - --no-dev
+      - id: uv-export
+        name: uv-export (dev)
+        args:
+          - --no-hashes
+          - --output-file=requirements-dev.txt
+          - --dev
+      - id: uv-lock
