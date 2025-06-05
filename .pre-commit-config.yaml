@@ -43,3 +43,9 @@ repos:
           - --output-file=requirements-dev.txt
           - --dev
       - id: uv-lock
+
+  - repo: https://github.com/pre-commit/mirrors-isort
+    rev: v5.10.1
+    hooks:
+      - id: isort
+        args: ["--profile", "black"] # Optional: Use Black-compatible sorting

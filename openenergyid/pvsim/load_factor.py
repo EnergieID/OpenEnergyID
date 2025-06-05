@@ -3,11 +3,14 @@ This module contains the LoadFactorPVSimulator class which
 simulates the power output of a PV system based on load factors.
 """
 
+import datetime as dt
+
 import aiohttp
 import pandas as pd
-from .abstract import PVSimulator
+
 from openenergyid import elia
-import datetime as dt
+
+from .abstract import PVSimulator
 
 
 class LoadFactorPVSimulator(PVSimulator):

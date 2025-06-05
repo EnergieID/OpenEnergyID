@@ -3,10 +3,10 @@
 from .main import find_best_mvlr
 from .models import (
     IndependentVariableInput,
+    IndependentVariableResult,
     MultiVariableRegressionInput,
     MultiVariableRegressionResult,
     ValidationParameters,
-    IndependentVariableResult,
 )
 
 __all__ = [

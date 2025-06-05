@@ -1,8 +1,8 @@
 """Baseload analysis package for power consumption data."""
 
-from .models import PowerReadingSchema, PowerSeriesSchema, BaseloadResultSchema
 from .analysis import BaseloadAnalyzer
 from .exceptions import InsufficientDataError, InvalidDataError
+from .models import BaseloadResultSchema, PowerReadingSchema, PowerSeriesSchema
 
 __version__ = "0.1.0"
 __all__ = [

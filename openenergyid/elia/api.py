@@ -3,8 +3,10 @@ This module contains the functions to interact with the Elia API.
 """
 
 import datetime as dt
+
 import aiohttp
 import pandas as pd
+
 from .const import Region
 
 DATE_FORMAT = "%Y-%m-%d"
