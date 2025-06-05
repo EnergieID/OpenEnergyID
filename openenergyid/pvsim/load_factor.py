@@ -7,10 +7,19 @@ import datetime as dt
 
 import aiohttp
 import pandas as pd
+from pydantic import BaseModel
 
 from openenergyid import elia
 
 from .abstract import PVSimulator
+
+
+class LoadFactorRequestParameters(BaseModel):
+    """Parameters used to request load factors for the PV simulator."""
+
+    start: dt.date
+    end: dt.date
+    region: elia.Region
 
 
 class LoadFactorPVSimulator(PVSimulator):
@@ -24,6 +33,27 @@ class LoadFactorPVSimulator(PVSimulator):
         self.inverter_power = inverter_power
 
         super().__init__()
+
+    @classmethod
+    async def init_with_load_factor_request(
+        cls,
+        request_parameters: LoadFactorRequestParameters,
+        panel_power: float,
+        inverter_power: float,
+        session: aiohttp.ClientSession,
+    ) -> "LoadFactorPVSimulator":
+        """
+        Initialize the simulator with load factors downloaded from the API.
+        """
+        load_factors = await cls.download_load_factors(
+            start=request_parameters.start,
+            end=request_parameters.end,
+            region=request_parameters.region,
+            session=session,
+        )
+        return cls(
+            load_factors=load_factors, panel_power=panel_power, inverter_power=inverter_power
+        )
 
     def simulate(self, **kwargs) -> pd.Series:
         """Run the simulation."""

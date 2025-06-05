@@ -7,6 +7,8 @@ from typing import cast
 
 import pandas as pd
 
+from openenergyid.models import TimeSeries
+
 
 class PVSimulator(ABC):
     """
@@ -30,3 +32,9 @@ class PVSimulator(ABC):
         Run the simulation and return the results as a Series.
         """
         raise NotImplementedError()
+
+    def result_to_timeseries(self):
+        """
+        Convert the simulation results to a TimeSeries object.
+        """
+        return TimeSeries.from_pandas(self.simulation_results)
