@@ -3,10 +3,10 @@
 git config --global --add safe.directory /workspaces/OpenEnergyID
 
 # Install Python tools
-pipx install ruff poetry pre-commit
+pipx install ruff uv pre-commit
 
 # Install project dependencies using Poetry
-poetry install
+uv sync
 
 # Install pre-commit hooks
 pre-commit install

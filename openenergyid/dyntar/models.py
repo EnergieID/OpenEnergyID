@@ -95,16 +95,6 @@ class DynamicTariffAnalysisOutputSummary(BaseModel):
 class DynamicTariffAnalysisOutput(TimeDataFrame):
     """Output frame for dynamic tariff analysis."""
 
-    columns: list[OutputColumns] = Field(
-        min_length=1,
-        max_length=len(OutputColumns.__args__),
-        examples=[OutputColumns.__args__],
-    )
-    data: list[
-        conlist(
-            item_type=confloat(allow_inf_nan=True),
-            min_length=1,
-            max_length=len(OutputColumns.__args__),
-        )  # type: ignore
-    ] = Field(examples=[[0.0] * len(OutputColumns.__args__)])
+    columns: list[str]
+    data: list[list[float | None]]
     summary: DynamicTariffAnalysisOutputSummary | None = None

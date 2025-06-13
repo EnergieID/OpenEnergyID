@@ -88,7 +88,11 @@ class TimeSeries(TimeSeriesBase):
     @classmethod
     def from_pandas(cls, data: pd.Series) -> Self:
         """Create from a Pandas Series."""
-        return cls(name=str(data.name), data=data.tolist(), index=data.index.tolist())
+        if not hasattr(data, "name") or data.name is None:
+            name = None
+        else:
+            name = str(data.name)
+        return cls(name=name, data=data.tolist(), index=data.index.tolist())
 
     def to_pandas(self, timezone: str = "UTC") -> pd.Series:
         """Convert to a Pandas Series."""
