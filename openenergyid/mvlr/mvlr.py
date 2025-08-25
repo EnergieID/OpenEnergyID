@@ -206,9 +206,9 @@ class MultiVariableLinearRegression:
 
     def _do_analysis_cross_validation(self):
         """Find the best model (fit) based on cross-valiation (leave one out)"""
-        assert (
-            len(self.data) < 15
-        ), "Cross-validation is not implemented if your sample contains more than 15 datapoints"
+        assert len(self.data) < 15, (
+            "Cross-validation is not implemented if your sample contains more than 15 datapoints"
+        )
 
         # initialization: first model is the mean, but compute cv correctly.
         errors = []
