@@ -6,7 +6,7 @@
   // "postStartCommand": "",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-  "remoteUser": "root",
+  "remoteUser": "vscode",
   "customizations": {
     "vscode": {
       "extensions": [
