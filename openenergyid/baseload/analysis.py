@@ -163,11 +163,13 @@ class BaseloadAnalyzer:
                         pl.col("total_consumption_in_kilowatthour")
                         - pl.col("consumption_due_to_baseload_in_kilowatthour")
                     ).alias("consumption_not_due_to_baseload_in_kilowatthour"),
-                    # What fraction of total energy was from baseload
-                    (
+                    pl.when(pl.col("total_consumption_in_kilowatthour") != 0)
+                    .then(
                         pl.col("consumption_due_to_baseload_in_kilowatthour")
                         / pl.col("total_consumption_in_kilowatthour")
-                    ).alias("baseload_ratio"),
+                    )
+                    .otherwise(None)
+                    .alias("baseload_ratio"),
                 ]
             )
         )
