@@ -60,7 +60,6 @@ class LoadFactorPVSimulator(PVSimulator):
         result = self.load_factors * self.panel_power * 0.01
         result.clip(upper=self.inverter_power, inplace=True)
         result.rename("power", inplace=True)
-        self._simulation_results = result
         return result
 
     @staticmethod

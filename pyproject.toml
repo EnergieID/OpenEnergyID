@@ -24,7 +24,9 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "aiohttp>=3.12.15",
     "pandera[polars]>=0.22.1",
+    "pvlib>=0.13.0",
     "pydantic>=2.8.2",
     "statsmodels>=0.14.2",
 ]

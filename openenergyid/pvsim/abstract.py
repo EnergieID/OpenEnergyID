@@ -22,8 +22,8 @@ class PVSimulator(ABC):
     def simulation_results(self) -> pd.Series:
         """The results of the simulation."""
         if self._simulation_results is None:
-            self.simulate()
-            self._simulation_results = cast(pd.Series, self._simulation_results)
+            results = self.simulate()
+            self._simulation_results = cast(pd.Series, results)
         return self._simulation_results
 
     @abstractmethod
