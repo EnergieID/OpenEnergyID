@@ -69,7 +69,7 @@ class PVLibPVSystem(BaseModel):
     Model for a PV system, consisting of arrays and inverter parameters.
     """
 
-    arrays: list[PVLibArray] | PVLibArray
+    arrays: list[PVLibArray]
     inverter_parameters: PVWattsInverter | dict
 
     class Config:
@@ -83,11 +83,7 @@ class PVLibPVSystem(BaseModel):
         """
         params = self.model_dump(exclude={"arrays", "inverter_parameters"})
 
-        arrays = (
-            [array.create_array() for array in self.arrays]
-            if isinstance(self.arrays, list)
-            else [self.arrays.create_array()]
-        )
+        arrays = [array.create_array() for array in self.arrays]
 
         ip = (
             self.inverter_parameters
