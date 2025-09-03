@@ -1,37 +1,33 @@
-import typing
+"""
+PVLib-based models for photovoltaic system simulation.
+
+Defines models for PV modules, arrays, inverters, systems, locations, and model chains,
+with methods to instantiate corresponding pvlib objects and retrieve weather data.
+"""
+
+import datetime as dt
 
 import pandas as pd
 import pvlib
 from pydantic import BaseModel
 
-
-def get_weather(
-    latitude: float, longitude: float, year: int, utc_offset: int, tz: str
-) -> pd.DataFrame:
-    weather = pvlib.iotools.get_pvgis_tmy(
-        latitude=latitude, longitude=longitude, coerce_year=year, roll_utc_offset=utc_offset
-    )[0]
-    weather = typing.cast(pd.DataFrame, weather)
-    weather = weather.tz_convert(tz)
-    weather.index.name = None
-
-    # Add the first row again as the last row, but make the time that of the last row + 1h
-    first_row = weather.iloc[0]
-    last_index = typing.cast(pd.Timestamp, weather.last_valid_index())
-    first_row.name = last_index + pd.Timedelta(hours=1)
-    weather = pd.concat([weather, first_row.to_frame().T])
-    weather = weather.resample("15min").interpolate()
-    # drop last row
-    weather = weather.iloc[:-1]
-    return weather
+from .weather import get_weather
 
 
 class PVWattsModule(BaseModel):
+    """
+    Model for PVWatts module parameters.
+    """
+
     pdc0: float = 420
     gamma_pdc: float = -0.003
 
 
 class PVLibArray(BaseModel):
+    """
+    Model for a PV array, including mounting, module, and temperature parameters.
+    """
+
     mount: pvlib.pvsystem.FixedMount | pvlib.pvsystem.SingleAxisTrackerMount
     module_parameters: PVWattsModule | dict = PVWattsModule()
     modules_per_string: int
@@ -41,10 +37,14 @@ class PVLibArray(BaseModel):
     ]
 
     class Config:
-        arbitrary_types_allowed = True
+        """Pydantic model configuration."""
+
         extra = "allow"
 
     def create_array(self) -> pvlib.pvsystem.Array:
+        """
+        Instantiate a pvlib.pvsystem.Array from this model.
+        """
         params = self.model_dump(exclude={"mount", "module_parameters"})
 
         mp = (
@@ -57,18 +57,30 @@ class PVLibArray(BaseModel):
 
 
 class PVWattsInverter(BaseModel):
+    """
+    Model for PVWatts inverter parameters.
+    """
+
     pdc0: float
 
 
 class PVLibPVSystem(BaseModel):
+    """
+    Model for a PV system, consisting of arrays and inverter parameters.
+    """
+
     arrays: list[PVLibArray] | PVLibArray
     inverter_parameters: PVWattsInverter | dict
 
     class Config:
+        """Pydantic model configuration."""
+
         extra = "allow"
-        arbitrary_types_allowed = True
 
     def create_system(self) -> pvlib.pvsystem.PVSystem:
+        """
+        Instantiate a pvlib.pvsystem.PVSystem from this model.
+        """
         params = self.model_dump(exclude={"arrays", "inverter_parameters"})
 
         arrays = (
@@ -87,6 +99,10 @@ class PVLibPVSystem(BaseModel):
 
 
 class PVLibLocation(BaseModel):
+    """
+    Model for a geographic location.
+    """
+
     latitude: float
     longitude: float
     tz: str
@@ -94,36 +110,59 @@ class PVLibLocation(BaseModel):
     name: str | None = None
 
     def create_location(self) -> pvlib.location.Location:
+        """
+        Instantiate a pvlib.location.Location from this model.
+        """
         params = self.model_dump()
 
         return pvlib.location.Location(**params)
 
 
 class PVLibModelChain(BaseModel):
+    """
+    Model for a PVLib ModelChain, including system, location, and simulation period.
+    """
+
     system: PVLibPVSystem
     location: PVLibLocation
-    year: int
-    utc_offset: int
-    aoi_model: str = "physical"
-    dc_model: str = "pvwatts"
+    start: dt.date
+    end: dt.date
 
     class Config:
+        """Pydantic model configuration."""
+
         extra = "allow"
-        arbitrary_types_allowed = True
 
     def create_modelchain(self) -> pvlib.modelchain.ModelChain:
-        params = self.model_dump(exclude={"system", "location", "year", "utc_offset"})
+        """
+        Instantiate a pvlib.modelchain.ModelChain from this model.
+        """
+        params = self.model_dump(exclude={"system", "location", "start", "end"})
 
         return pvlib.modelchain.ModelChain(
-            system=self.system.create_system(), location=self.location.create_location(), **params
+            system=self.system.create_system(),
+            location=self.location.create_location(),
+            **params,
         )
 
     def get_weather(self) -> pd.DataFrame:
+        """
+        Retrieve weather data for the model's location and date range.
+        """
         location = self.location
         return get_weather(
             latitude=location.latitude,
             longitude=location.longitude,
-            year=self.year,
-            utc_offset=self.utc_offset,
+            start=self.start,
+            end=self.end,
             tz=location.tz,
         )
+
+
+class PVLibPVWattsModelChain(PVLibModelChain):
+    """
+    Specialized PVLibModelChain for PVWatts, with default AOI and DC models.
+    """
+
+    aoi_model: str = "physical"
+    dc_model: str = "pvwatts"
