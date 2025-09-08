@@ -6,16 +6,22 @@ to simulate PV system performance.
 """
 
 import datetime as dt
+from typing import Annotated, Union
 
 import pandas as pd
 import pvlib
 from pvlib.modelchain import ModelChain
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from openenergyid.pvsim.abstract import PVSimulator
 
 from .models import ModelChainModel, to_pv
+from .quickscan import QuickScanModelChainModel
 from .weather import get_weather
+
+ModelChainUnion = Annotated[
+    Union[ModelChainModel, QuickScanModelChainModel], Field(discriminator="type")
+]
 
 
 class PVLibSimulationInput(BaseModel):
@@ -23,9 +29,17 @@ class PVLibSimulationInput(BaseModel):
     Input parameters for the PVLibSimulator.
     """
 
-    modelchain: ModelChainModel  # type: ignore
+    modelchain: ModelChainUnion
     start: dt.date
     end: dt.date
+
+
+class PVLibQuickScanInput(PVLibSimulationInput):
+    """
+    Input parameters for the PVLibQuickScanSimulator.
+    """
+
+    modelchain: QuickScanModelChainModel
 
 
 class PVLibSimulator(PVSimulator):

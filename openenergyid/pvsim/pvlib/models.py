@@ -227,4 +227,9 @@ TYPE_OVERLAY.update(
 )
 
 # ModelChain model
-ModelChainModel = pyd_model_from_type(ModelChain)
+ModelChainModel = create_model(
+    "ModelChainModel",
+    type=(Literal["modelchain"], Field("modelchain", frozen=True)),  # tag
+    __base__=pyd_model_from_type(ModelChain),
+    __config__=ConfigDict(extra="allow"),
+)
