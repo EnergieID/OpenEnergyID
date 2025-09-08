@@ -9,11 +9,13 @@ import datetime as dt
 
 import pandas as pd
 import pvlib
-from pydantic import BaseModel, ValidationError, field_validator
+from pvlib.modelchain import ModelChain
+from pydantic import BaseModel
 
 from openenergyid.pvsim.abstract import PVSimulator
 
-from .models import PVLibModelChain, PVLibPVWattsModelChain
+from .models import ModelChainModel, to_pv
+from .weather import get_weather
 
 
 class PVLibSimulationInput(BaseModel):
@@ -21,27 +23,9 @@ class PVLibSimulationInput(BaseModel):
     Input parameters for the PVLibSimulator.
     """
 
-    modelchain: PVLibModelChain | PVLibPVWattsModelChain
+    modelchain: ModelChainModel  # type: ignore
     start: dt.date
     end: dt.date
-
-    @field_validator("modelchain", mode="before")
-    @classmethod
-    def validate_modelchain(cls, v):
-        # Try to parse the input into a regular PVLibModelChain
-        try:
-            mc = PVLibModelChain.model_validate(v)
-            # Try exporting to PVLib object
-            mc.create_modelchain()
-            return mc
-        except (ValidationError, ValueError):
-            # If that fails, try parsing as a PVLibPVWattsModelChain
-            try:
-                mc = PVLibPVWattsModelChain.model_validate(v)
-                mc.create_modelchain()
-                return mc
-            except (ValidationError, ValueError) as e:
-                raise ValueError("Invalid modelchain input") from e
 
 
 class PVLibSimulator(PVSimulator):
@@ -54,7 +38,7 @@ class PVLibSimulator(PVSimulator):
         start: dt.date,
         end: dt.date,
         modelchain: pvlib.modelchain.ModelChain,
-        weather: pd.DataFrame,
+        weather: pd.DataFrame | None = None,
     ):
         """
         Initialize the simulator with a ModelChain and weather DataFrame.
@@ -107,7 +91,19 @@ class PVLibSimulator(PVSimulator):
         Returns:
             PVLibSimulator: An initialized simulator.
         """
-        mc = input_.modelchain.create_modelchain()
-        weather = input_.modelchain.get_weather(start=input_.start, end=input_.end)
+        mc: ModelChain = to_pv(input_.modelchain)
 
-        return cls(start=input_.start, end=input_.end, modelchain=mc, weather=weather)
+        return cls(start=input_.start, end=input_.end, modelchain=mc)
+
+    def load_weather(self):
+        """
+        Load weather data for the simulation period.
+        """
+        weather = get_weather(
+            latitude=self.modelchain.location.latitude,
+            longitude=self.modelchain.location.longitude,
+            start=self.start,
+            end=self.end,
+            tz=self.modelchain.location.tz,
+        )
+        self.weather = weather

@@ -1,24 +1,11 @@
 """PVLib-based simulator implementation."""
 
 from .main import PVLibSimulationInput, PVLibSimulator
-from .models import (
-    PVLibArray,
-    PVLibLocation,
-    PVLibModelChain,
-    PVLibPVSystem,
-    PVLibPVWattsModelChain,
-    PVWattsInverter,
-    PVWattsModule,
-)
+from .models import ModelChainModel, to_pv
 
 __all__ = [
     "PVLibSimulator",
     "PVLibSimulationInput",
-    "PVWattsModule",
-    "PVLibArray",
-    "PVWattsInverter",
-    "PVLibPVSystem",
-    "PVLibLocation",
-    "PVLibModelChain",
-    "PVLibPVWattsModelChain",
+    "ModelChainModel",
+    "to_pv",
 ]
