@@ -1,6 +1,6 @@
 """PVLib-based simulator implementation."""
 
-from .main import PVLibSimulator
+from .main import PVLibSimulationInput, PVLibSimulator
 from .models import (
     PVLibArray,
     PVLibLocation,
@@ -13,6 +13,7 @@ from .models import (
 
 __all__ = [
     "PVLibSimulator",
+    "PVLibSimulationInput",
     "PVWattsModule",
     "PVLibArray",
     "PVWattsInverter",

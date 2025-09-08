@@ -23,18 +23,69 @@ class PVWattsModule(BaseModel):
     gamma_pdc: float = -0.003
 
 
+class PVLibFixedMount(BaseModel):
+    """
+    Model for a fixed mount system.
+    """
+
+    surface_tilt: float = 0
+    surface_azimuth: float = 180
+    racking_model: str | None = "open_rack"
+    module_height: float | None = None
+
+    class Config:
+        """Pydantic model configuration."""
+
+        extra = "allow"
+
+    def create_mount(self) -> pvlib.pvsystem.FixedMount:
+        """
+        Instantiate a pvlib.pvsystem.FixedMount from this model.
+        """
+        params = self.model_dump()
+        return pvlib.pvsystem.FixedMount(**params)
+
+
+class PVLibSingleAxisTrackerMount(BaseModel):
+    """ """
+
+    axis_tilt: float = 0
+    axis_azimuth: float = 180
+    max_angle: float | tuple = 90
+    backtrack: bool = True
+    gcr: float = 2.0 / 7.0
+    cross_axis_tilt: float = 0
+    racking_model: str | None = "open_rack"
+    module_height: float | None = None
+
+    class Config:
+        """Pydantic model configuration."""
+
+        extra = "allow"
+
+    def create_mount(self) -> pvlib.pvsystem.SingleAxisTrackerMount:
+        """
+        Instantiate a pvlib.pvsystem.SingleAxisTrackerMount from this model.
+        """
+        params = self.model_dump()
+        return pvlib.pvsystem.SingleAxisTrackerMount(**params)
+
+
 class PVLibArray(BaseModel):
     """
     Model for a PV array, including mounting, module, and temperature parameters.
     """
 
-    mount: pvlib.pvsystem.FixedMount | pvlib.pvsystem.SingleAxisTrackerMount
+    mount: PVLibFixedMount | PVLibSingleAxisTrackerMount = PVLibFixedMount()
+    albedo: float | None = None
+    surface_type: str | None = None
+    module_type: str | None = "glass_glass"
     module_parameters: PVWattsModule | dict = PVWattsModule()
-    modules_per_string: int
+    temperature_model_parameters: dict | None = None
+    modules_per_string: int = 1
     strings: int = 1
-    temperature_model_parameters: dict = pvlib.temperature.TEMPERATURE_MODEL_PARAMETERS["sapm"][
-        "open_rack_glass_glass"
-    ]
+    array_losses_parameters: dict | None = None
+    name: str | None = None
 
     class Config:
         """Pydantic model configuration."""
@@ -47,13 +98,19 @@ class PVLibArray(BaseModel):
         """
         params = self.model_dump(exclude={"mount", "module_parameters"})
 
+        mount = (
+            self.mount
+            if isinstance(self.mount, pvlib.pvsystem.SingleAxisTrackerMount)
+            else self.mount.create_mount()
+        )
+
         mp = (
             self.module_parameters
             if isinstance(self.module_parameters, dict)
             else self.module_parameters.model_dump()
         )
 
-        return pvlib.pvsystem.Array(mount=self.mount, module_parameters=mp, **params)
+        return pvlib.pvsystem.Array(mount=mount, module_parameters=mp, **params)
 
 
 class PVWattsInverter(BaseModel):
@@ -71,6 +128,7 @@ class PVLibPVSystem(BaseModel):
 
     arrays: list[PVLibArray]
     inverter_parameters: PVWattsInverter | dict
+    name: str | None = None
 
     class Config:
         """Pydantic model configuration."""
@@ -101,7 +159,7 @@ class PVLibLocation(BaseModel):
 
     latitude: float
     longitude: float
-    tz: str
+    tz: str = "UTC"
     altitude: float | None = None
     name: str | None = None
 
@@ -121,8 +179,6 @@ class PVLibModelChain(BaseModel):
 
     system: PVLibPVSystem
     location: PVLibLocation
-    start: dt.date
-    end: dt.date
 
     class Config:
         """Pydantic model configuration."""
@@ -141,7 +197,7 @@ class PVLibModelChain(BaseModel):
             **params,
         )
 
-    def get_weather(self) -> pd.DataFrame:
+    def get_weather(self, start: dt.date, end: dt.date) -> pd.DataFrame:
         """
         Retrieve weather data for the model's location and date range.
         """
@@ -149,8 +205,8 @@ class PVLibModelChain(BaseModel):
         return get_weather(
             latitude=location.latitude,
             longitude=location.longitude,
-            start=self.start,
-            end=self.end,
+            start=start,
+            end=end,
             tz=location.tz,
         )
 
