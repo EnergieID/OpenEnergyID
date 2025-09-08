@@ -1,3 +1,5 @@
+"""PVLib-based simulator implementation."""
+
 from .main import PVLibSimulator
 from .models import (
     PVLibArray,
