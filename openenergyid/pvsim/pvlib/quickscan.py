@@ -22,15 +22,14 @@ class QuickPVSystemModel(PVSystemModel):
     """
 
     p_module: float = Field(default=420, gt=0, description="Module max DC power in W")
-    p_inverter: float | None = Field(
-        default=None,
-        ge=0,
+    p_inverter: float = Field(
+        gt=0,
         description="Inverter max power in W",
     )
     inverter_efficiency: float = Field(
         default=0.96, gt=0, le=1, description="PVWatts efficiency used to derive PDC0 from PAC."
     )
-    module_parameters: dict[str, float] = {"pdc0": 420, "gamma_pdc": -0.003}
+    module_parameters: dict[str, float] = Field(default={"pdc0": 420, "gamma_pdc": -0.003})
     module_type: str = Field(default="glass_polymer", description="Type of PV module")
     racking_model: str = Field(default="open_rack", description="Type of racking model")
 
@@ -45,8 +44,6 @@ class QuickPVSystemModel(PVSystemModel):
             ValueError: If both p_inverter and inverter_parameters['pdc0'] are provided.
         """
         p_inverter = self.p_inverter
-        if p_inverter is None:
-            return self
         inv_params: dict[str, Any] = self.inverter_parameters or {}  # type: ignore
 
         # choose policy: reject or overwrite if user also sent pdc0

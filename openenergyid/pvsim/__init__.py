@@ -1,3 +1,3 @@
-from .load_factor import LoadFactorPVSimulator, LoadFactorRequestParameters
+from .main import PVSimulationInput, get_simulator
 
-__all__ = ["LoadFactorPVSimulator", "LoadFactorRequestParameters"]
+__all__ = ["PVSimulationInput", "get_simulator"]

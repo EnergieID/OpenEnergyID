@@ -6,17 +6,20 @@ to simulate PV system performance.
 """
 
 import datetime as dt
-from typing import Annotated, Union
+from typing import Annotated, Literal, Union
 
 import pandas as pd
 import pvlib
+from aiohttp import ClientSession
 from pvlib.modelchain import ModelChain
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from openenergyid.pvsim.abstract import PVSimulator
+from openenergyid.pvsim.abstract import PVSimulationInputAbstract, PVSimulator
 
 from .models import ModelChainModel, to_pv
-from .quickscan import QuickScanModelChainModel
+from .quickscan import (
+    QuickScanModelChainModel,  # pyright: ignore[reportAttributeAccessIssue]
+)
 from .weather import get_weather
 
 ModelChainUnion = Annotated[
@@ -24,22 +27,13 @@ ModelChainUnion = Annotated[
 ]
 
 
-class PVLibSimulationInput(BaseModel):
+class PVLibSimulationInput(PVSimulationInputAbstract):
     """
     Input parameters for the PVLibSimulator.
     """
 
+    type: Literal["pvlib"] = Field("pvlib", frozen=True)  # tag
     modelchain: ModelChainUnion
-    start: dt.date
-    end: dt.date
-
-
-class PVLibQuickScanInput(PVLibSimulationInput):
-    """
-    Input parameters for the PVLibQuickScanSimulator.
-    """
-
-    modelchain: QuickScanModelChainModel
 
 
 class PVLibSimulator(PVSimulator):
@@ -109,10 +103,7 @@ class PVLibSimulator(PVSimulator):
 
         return cls(start=input_.start, end=input_.end, modelchain=mc)
 
-    def load_weather(self):
-        """
-        Load weather data for the simulation period.
-        """
+    async def load_resources(self, session: ClientSession | None = None) -> None:
         weather = get_weather(
             latitude=self.modelchain.location.latitude,
             longitude=self.modelchain.location.longitude,
