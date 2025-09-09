@@ -36,6 +36,7 @@ class EliaPVSimulator(PVSimulator):
         inverter_power: float,
         region: elia.Region,
         load_factors: pd.Series | None = None,
+        **kwargs,
     ):
         self.start = start
         self.end = end
@@ -44,18 +45,7 @@ class EliaPVSimulator(PVSimulator):
         self.region = region
         self.load_factors = load_factors if load_factors is not None else pd.Series(dtype=float)
 
-        super().__init__()
-
-    @classmethod
-    def from_pydantic(cls, input_: EliaPVSimulationInput) -> "EliaPVSimulator":
-        """Create an instance of the simulator from Pydantic input data."""
-        return cls(
-            start=input_.start,
-            end=input_.end,
-            panel_power=input_.panel_power,
-            region=input_.region,
-            inverter_power=input_.inverter_power,
-        )
+        super().__init__(**kwargs)
 
     def simulate(self, **kwargs) -> pd.Series:
         """Run the simulation."""

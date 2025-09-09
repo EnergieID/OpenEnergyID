@@ -47,6 +47,7 @@ class PVLibSimulator(PVSimulator):
         end: dt.date,
         modelchain: pvlib.modelchain.ModelChain,
         weather: pd.DataFrame | None = None,
+        **kwargs,
     ):
         """
         Initialize the simulator with a ModelChain and weather DataFrame.
@@ -55,7 +56,7 @@ class PVLibSimulator(PVSimulator):
             modelchain: An instance of pvlib.modelchain.ModelChain.
             weather: Weather data as a pandas DataFrame.
         """
-        super().__init__()
+        super().__init__(**kwargs)
 
         self.start = start
         self.end = end
@@ -101,7 +102,7 @@ class PVLibSimulator(PVSimulator):
         """
         mc: ModelChain = to_pv(input_.modelchain)
 
-        return cls(start=input_.start, end=input_.end, modelchain=mc)
+        return cls(modelchain=mc, **input_.model_dump(exclude={"modelchain"}))
 
     async def load_resources(self, session: ClientSession | None = None) -> None:
         weather = get_weather(

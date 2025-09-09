@@ -75,7 +75,7 @@ class QuickScanModelChainModel(ModelChainModel):
     Sets default AOI and DC models for PVWatts.
     """
 
+    type: Literal["quickscan"] = Field("quickscan", frozen=True)  # tag
     system: QuickPVSystemModel
     aoi_model: str = "physical"
     dc_model: str = "pvwatts"
-    type: Literal["quickscan"] = Field("quickscan", frozen=True)  # tag
