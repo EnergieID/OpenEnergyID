@@ -1,7 +1,8 @@
-import pytest
-import nbformat
-from nbconvert.preprocessors import ExecutePreprocessor
 import os
+
+import nbformat
+import pytest
+from nbconvert.preprocessors import ExecutePreprocessor
 
 
 def run_notebook(notebook_path):

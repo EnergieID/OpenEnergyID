@@ -1,13 +1,11 @@
 """Data models for the Open Energy ID."""
 
 import datetime as dt
-from typing import overload
-
-from typing import Self
+from typing import Self, overload
 
 import pandas as pd
-from pydantic import BaseModel
 import polars as pl
+from pydantic import BaseModel
 
 
 class TimeSeriesBase(BaseModel):

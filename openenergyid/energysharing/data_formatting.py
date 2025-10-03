@@ -1,7 +1,15 @@
 """Functions to create multi-indexed DataFrames for input and output data for energy sharing."""
 
 import pandas as pd
-from .const import GROSS_INJECTION, GROSS_OFFTAKE, KEY, NET_INJECTION, NET_OFFTAKE, SHARED_ENERGY
+
+from .const import (
+    GROSS_INJECTION,
+    GROSS_OFFTAKE,
+    KEY,
+    NET_INJECTION,
+    NET_OFFTAKE,
+    SHARED_ENERGY,
+)
 
 
 def create_multi_index_input_frame(

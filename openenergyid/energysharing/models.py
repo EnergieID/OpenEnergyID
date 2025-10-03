@@ -3,12 +3,13 @@
 from enum import Enum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, confloat
 import pandas as pd
+from pydantic import BaseModel, Field, confloat
 
 from openenergyid import TimeDataFrame
-from .data_formatting import create_multi_index_input_frame
+
 from .const import NET_INJECTION, NET_OFFTAKE, SHARED_ENERGY
+from .data_formatting import create_multi_index_input_frame
 
 
 class CalculationMethod(Enum):

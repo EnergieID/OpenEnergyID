@@ -1,7 +1,9 @@
 """Model for Capacity Analysis."""
 
 import datetime as dt
+
 from pydantic import BaseModel, ConfigDict, Field
+
 from openenergyid.models import TimeSeries
 
 

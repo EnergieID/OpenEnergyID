@@ -1,11 +1,12 @@
 """Models for dynamic tariff analysis."""
 
 from typing import Literal
-from pydantic import Field, conlist, confloat, BaseModel
+
+from pydantic import BaseModel, Field, confloat, conlist
 
 from openenergyid.models import TimeDataFrame
-from .const import Register
 
+from .const import Register
 
 RequiredColumns = Literal[
     "electricity_delivered",
