@@ -4,13 +4,15 @@ This module contains the abstract base class for PVSimulator.
 
 import datetime as dt
 from abc import ABC, abstractmethod
-from typing import cast
+from typing import Self, cast
 
 import pandas as pd
 from aiohttp import ClientSession
 from pydantic import BaseModel, Field
 
 from openenergyid.models import TimeSeries
+
+from ..const import ELECTRICITY_PRODUCED
 
 
 class PVSimulationInputAbstract(BaseModel):
@@ -59,8 +61,14 @@ class PVSimulator(ABC):
         result = self.simulation_results.resample(self.result_resolution).sum()
         return TimeSeries.from_pandas(result)
 
+    def result_as_frame(self) -> pd.DataFrame:
+        """
+        Convert the simulation results to a DataFrame.
+        """
+        return self.simulation_results.rename(ELECTRICITY_PRODUCED).to_frame()
+
     @classmethod
-    def from_pydantic(cls, input_: PVSimulationInputAbstract) -> "PVSimulator":
+    def from_pydantic(cls, input_: PVSimulationInputAbstract) -> Self:
         """
         Create an instance of the simulator from Pydantic input data.
         """

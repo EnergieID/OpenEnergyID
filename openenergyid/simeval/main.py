@@ -1,5 +1,7 @@
 """Module for evaluating energy simulation data."""
 
+import typing
+
 import numpy as np
 import pandas as pd
 
@@ -39,6 +41,8 @@ class Evaluator:
 
     def evaluate(self) -> dict[str, pd.DataFrame | pd.Series]:
         """Evaluate the data and return resampled results."""
+        if const.ELECTRICITY_DELIVERED not in self.data.columns:
+            self.data[const.ELECTRICITY_DELIVERED] = float("NaN")
         if const.ELECTRICITY_EXPORTED not in self.data.columns:
             self.data[const.ELECTRICITY_EXPORTED] = float("NaN")
         if const.ELECTRICITY_PRODUCED not in self.data.columns:
@@ -122,3 +126,23 @@ class Evaluator:
                     frame[const.ELECTRICITY_CONSUMED],
                 )
         return results
+
+
+def compare_results(
+    res_1: dict[str, pd.DataFrame | pd.Series], res_2: dict[str, pd.DataFrame | pd.Series]
+) -> dict[str, dict[str, pd.Series | pd.DataFrame]]:
+    """Compare two evaluation results and return the differences."""
+    results = {}
+    for key in res_1.keys():
+        if key in res_2:
+            df_1 = res_1[key]
+            df_2 = res_2[key]
+            if isinstance(df_1, pd.Series) and isinstance(df_2, pd.Series):
+                df_1 = df_1.to_frame().T
+                df_2 = df_2.to_frame().T
+            df_1, df_2 = typing.cast(pd.DataFrame, df_1), typing.cast(pd.DataFrame, df_2)
+            diff = df_2 - df_1
+            results[key] = {}
+            results[key]["diff"] = diff.dropna(how="all", axis=1).squeeze(axis=0)
+            results[key]["ratio_diff"] = (diff / df_1).dropna(how="all", axis=1).squeeze(axis=0)
+    return results
