@@ -1,5 +1,6 @@
 """Module for evaluating energy simulation data."""
 
+import numpy as np
 import pandas as pd
 
 from .. import const
@@ -7,7 +8,7 @@ from .. import const
 
 def evaluate(
     data: pd.DataFrame, return_frequencies: list[str] | None = None
-) -> dict[str, pd.DataFrame]:
+) -> dict[str, pd.DataFrame | pd.Series]:
     """Evaluate the data and return resampled results.
 
     Args:
@@ -30,22 +31,66 @@ class Evaluator:
 
     def __init__(self, data: pd.DataFrame, return_frequencies: list[str] | None = None):
         """Initialize the evaluator with data and return frequencies."""
-        self.data = data
+        self.data = data.copy()
         if return_frequencies is None:
             self.return_frequencies = ["MS"]  # Month Start
         else:
             self.return_frequencies = return_frequencies
 
-    def evaluate(self) -> dict[str, pd.DataFrame]:
+    def evaluate(self) -> dict[str, pd.DataFrame | pd.Series]:
         """Evaluate the data and return resampled results."""
+        if const.ELECTRICITY_EXPORTED not in self.data.columns:
+            self.data[const.ELECTRICITY_EXPORTED] = float("NaN")
+        if const.ELECTRICITY_PRODUCED not in self.data.columns:
+            self.data[const.ELECTRICITY_PRODUCED] = float("NaN")
+        if const.PRICE_ELECTRICITY_DELIVERED not in self.data.columns:
+            self.data[const.PRICE_ELECTRICITY_DELIVERED] = float("NaN")
+        if const.PRICE_ELECTRICITY_EXPORTED not in self.data.columns:
+            self.data[const.PRICE_ELECTRICITY_EXPORTED] = float("NaN")
+
         # Add electricy_consumed
         self.data[const.ELECTRICITY_CONSUMED] = (
             self.data[const.ELECTRICITY_DELIVERED]
-            - self.data[const.ELECTRICITY_EXPORTED]
-            + self.data[const.ELECTRICITY_PRODUCED]
+            - self.data[const.ELECTRICITY_EXPORTED].fillna(0.0)
+            + self.data[const.ELECTRICITY_PRODUCED].fillna(0.0)
+        ).clip(lower=0)
+
+        # Add electricy_self_consumed
+        self.data[const.ELECTRICITY_SELF_CONSUMED] = (
+            self.data[const.ELECTRICITY_PRODUCED] - self.data[const.ELECTRICITY_EXPORTED]
+        ).clip(lower=0)
+
+        # Add costs
+        self.data[const.COST_ELECTRICITY_DELIVERED] = (
+            self.data[const.ELECTRICITY_DELIVERED] * self.data[const.PRICE_ELECTRICITY_DELIVERED]
+        )
+        self.data[const.EARNINGS_ELECTRICITY_EXPORTED] = (
+            self.data[const.ELECTRICITY_EXPORTED] * self.data[const.PRICE_ELECTRICITY_EXPORTED]
+        )
+        self.data[const.COST_ELECTRICITY_NET] = (
+            self.data[const.COST_ELECTRICITY_DELIVERED]
+            - self.data[const.EARNINGS_ELECTRICITY_EXPORTED]
         )
 
-        results = {}
+        # Calculate sums
+        results: dict[str, pd.DataFrame | pd.Series] = {}
+        results["total"] = (
+            self.data[
+                [
+                    const.ELECTRICITY_DELIVERED,
+                    const.ELECTRICITY_EXPORTED,
+                    const.ELECTRICITY_PRODUCED,
+                    const.ELECTRICITY_CONSUMED,
+                    const.ELECTRICITY_SELF_CONSUMED,
+                    const.COST_ELECTRICITY_DELIVERED,
+                    const.EARNINGS_ELECTRICITY_EXPORTED,
+                    const.COST_ELECTRICITY_NET,
+                ]
+            ]
+            .dropna(axis=1, how="all")
+            .sum()
+        )
+
         for freq in self.return_frequencies:
             resampled = (
                 self.data[
@@ -54,10 +99,26 @@ class Evaluator:
                         const.ELECTRICITY_EXPORTED,
                         const.ELECTRICITY_PRODUCED,
                         const.ELECTRICITY_CONSUMED,
+                        const.ELECTRICITY_SELF_CONSUMED,
+                        const.COST_ELECTRICITY_DELIVERED,
+                        const.EARNINGS_ELECTRICITY_EXPORTED,
+                        const.COST_ELECTRICITY_NET,
                     ]
                 ]
+                .dropna(axis=1, how="all")
                 .resample(freq)
                 .sum()
             )
             results[freq] = resampled
+
+        # Add ratios
+        for _, frame in results.items():
+            if const.ELECTRICITY_SELF_CONSUMED in frame:
+                frame[const.RATIO_SELF_CONSUMPTION] = np.divide(
+                    frame[const.ELECTRICITY_SELF_CONSUMED], frame[const.ELECTRICITY_PRODUCED]
+                )
+                frame[const.RATIO_SELF_SUFFICIENCY] = np.divide(
+                    frame[const.ELECTRICITY_SELF_CONSUMED],
+                    frame[const.ELECTRICITY_CONSUMED],
+                )
         return results
