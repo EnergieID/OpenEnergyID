@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Self
+from typing import Annotated, Self
 
 import pandas as pd
 from aiohttp import ClientSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from ..models import TimeDataFrame
+from ..simeval.models import ComparisonPayload, EvalPayload, EvaluationOutput
 
 
 class SimulationInputAbstract(BaseModel):
@@ -17,10 +17,12 @@ class SimulationInputAbstract(BaseModel):
 class SimulationSummary(BaseModel):
     """Summary of a simulation including ex-ante, simulation results, ex-post, and comparisons."""
 
-    ex_ante: dict[str, TimeDataFrame | dict[str, float]]
-    simulation_result: dict[str, TimeDataFrame | dict[str, float]]
-    ex_post: dict[str, TimeDataFrame | dict[str, float]]
-    comparison: dict[str, dict[str, TimeDataFrame | dict[str, float]]]
+    ex_ante: Annotated[EvalPayload, Field(description="Ex-ante evaluation results.")]
+    simulation_result: Annotated[EvalPayload, Field(description="Simulation results.")]
+    ex_post: Annotated[EvalPayload, Field(description="Ex-post evaluation results.")]
+    comparison: Annotated[
+        ComparisonPayload, Field(description="Comparison between ex-ante and ex-post results.")
+    ]
 
     @classmethod
     def from_simulation(
@@ -32,29 +34,31 @@ class SimulationSummary(BaseModel):
     ) -> Self:
         """Create a SimulationSummary from simulation data."""
         ea = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
+            k: EvaluationOutput.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
             for k, v in ex_ante.items()
         }
         sr = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
+            k: EvaluationOutput.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
             for k, v in simulation_result.items()
         }
         ep = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
+            k: EvaluationOutput.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
             for k, v in ex_post.items()
         }
         c = {
             k: {
-                kk: TimeDataFrame.from_pandas(vv) if isinstance(vv, pd.DataFrame) else vv.to_dict()
+                kk: EvaluationOutput.from_pandas(vv)
+                if isinstance(vv, pd.DataFrame)
+                else vv.to_dict()
                 for kk, vv in v.items()
             }
             for k, v in comparison.items()
         }
         return cls(
-            ex_ante=ea,
-            simulation_result=sr,
-            ex_post=ep,
-            comparison=c,
+            ex_ante=ea,  # type: ignore
+            simulation_result=sr,  # type: ignore
+            ex_post=ep,  # type: ignore
+            comparison=c,  # type: ignore
         )
 
 
