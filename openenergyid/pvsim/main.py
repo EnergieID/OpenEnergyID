@@ -1,4 +1,4 @@
-from typing import Annotated, Union
+from typing import Annotated, Self, Union
 
 import pandas as pd
 from pydantic import BaseModel, Field
@@ -28,7 +28,7 @@ class PVSimulationSummary(BaseModel):
         simulation_result: dict[str, pd.DataFrame | pd.Series],
         ex_post: dict[str, pd.DataFrame | pd.Series],
         comparison: dict[str, dict[str, pd.DataFrame | pd.Series]],
-    ) -> "PVSimulationSummary":
+    ) -> Self:
         """Create a PVSimulationSummary from simulation data."""
         ea = {
             k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()

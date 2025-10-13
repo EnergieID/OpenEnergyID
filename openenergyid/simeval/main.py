@@ -35,7 +35,7 @@ class Evaluator:
         """Initialize the evaluator with data and return frequencies."""
         self.data = data.copy()
         if return_frequencies is None:
-            self.return_frequencies = ["MS"]  # Month Start
+            self.return_frequencies = []
         else:
             self.return_frequencies = return_frequencies
 
