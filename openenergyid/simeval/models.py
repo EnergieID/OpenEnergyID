@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field, RootModel, confloat, conlist
+from pydantic import BaseModel, Field, RootModel, StringConstraints, confloat, conlist
 
 from ..models import TimeDataFrame
 
@@ -44,24 +44,44 @@ class EvaluationOutput(TimeDataFrame):
 
 # ---------- Reusable bits ----------
 
-FrequencyKey = Annotated[
+Frequency = Annotated[
     str,
+    StringConstraints(pattern=r"^(\d+min|H|D|W(?:-[A-Z]{3})?|MS|M|Q|QS|A|AS)$"),
     Field(
-        description="Pandas-style frequency string used in the request.",
+        title="Frequency key",
+        description=(
+            "Pandas-style frequency string (freqstr). "
+            "Typical examples: '15min', 'H', 'D', 'MS', 'W-MON'."
+        ),
         examples=["15min", "H", "MS", "W-MON"],
     ),
 ]
 
-MetricSummary = Annotated[
-    dict[str, float],
+Metric = Annotated[
+    str,
     Field(
-        description=(
-            "Total/aggregate values per metric (e.g. { 'electricity_delivered': 123.4 }). "
-            "Keys are metric identifiers from the evaluation domain."
-        ),
-        examples=[{"electricity_delivered": 123.4, "cost_electricity_net": 42.0}],
+        description="Metric identifier.",
+        examples=[
+            "electricity_delivered",
+            "electricity_exported",
+            "electricity_produced",
+            "electricity_consumed",
+            "electricity_self_consumed",
+            "cost_electricity_delivered",
+            "earnings_electricity_exported",
+            "cost_electricity_net",
+            "ratio_self_consumption",
+            "ratio_self_sufficiency",
+        ],
     ),
 ]
+
+
+class MetricSummary(RootModel[dict[Metric, float]]):
+    """Total/aggregate values per metric (e.g. { 'electricity_delivered': 123.4 })."""
+
+    root: dict[Metric, float]
+
 
 # ---------- Eval payloads ----------
 # We model “either { 'total': MetricSummary } OR { '<freq>': EvaluationOutput, ... }”
@@ -76,10 +96,10 @@ class EvalTotals(BaseModel):
     )
 
 
-class EvalByFrequency(RootModel[dict[FrequencyKey, EvaluationOutput]]):
+class EvalByFrequency(RootModel[dict[Frequency, EvaluationOutput]]):
     """Per-frequency time series results."""
 
-    root: dict[FrequencyKey, EvaluationOutput]
+    root: dict[Frequency, EvaluationOutput]
 
 
 EvalPayload = Annotated[
@@ -130,10 +150,10 @@ class ComparisonTotals(BaseModel):
     total: DiffTotal | RatioDiffTotal = Field(..., description="Totals-level comparison.")
 
 
-class ComparisonByFrequency(RootModel[dict[FrequencyKey, Union[DiffTS, RatioDiffTS]]]):
+class ComparisonByFrequency(RootModel[dict[Frequency, Union[DiffTS, RatioDiffTS]]]):
     """Per-frequency comparison; for each freq, pick diff or ratio_diff."""
 
-    root: dict[FrequencyKey, DiffTS | RatioDiffTS]
+    root: dict[Frequency, DiffTS | RatioDiffTS]
 
 
 ComparisonPayload = Annotated[

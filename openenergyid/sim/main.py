@@ -9,6 +9,7 @@ from ..abstractsim import SimulationSummary, Simulator
 from ..pvsim import PVSimulationInput, apply_simulation
 from ..pvsim import get_simulator as get_pv_simulator
 from ..simeval import EvaluationInput, compare_results, evaluate
+from ..simeval.models import Frequency
 
 # Here we define all types of simulations
 SimulationInput = Annotated[Union[PVSimulationInput], Field(discriminator="type")]
@@ -30,7 +31,7 @@ class FullSimulationInput(BaseModel):
     ex_ante_data: ExAnteData
     simulation_parameters: SimulationInput
     timezone: str = "Europe/Brussels"
-    return_frequencies: list[str] | None = Field(
+    return_frequencies: list[Frequency] | None = Field(
         default=None,
         examples=["MS", "W-MON"],
         description="Optional list of frequencies that should be included in the analysis. Be default, only `total` is included, but you can add more here. Uses the Pandas freqstr.",
