@@ -1,16 +1,14 @@
 """Generic Simulation Analysis Module."""
 
-from typing import Annotated, Self, Union
+from typing import Annotated, Union
 
 import aiohttp
-import pandas as pd
 from pydantic import BaseModel, Field
 
-from ..models import TimeDataFrame
+from ..abstractsim import SimulationSummary, Simulator
 from ..pvsim import PVSimulationInput, apply_simulation
 from ..pvsim import get_simulator as get_pv_simulator
 from ..simeval import EvaluationInput, compare_results, evaluate
-from .abstract import Simulator
 
 # Here we define all types of simulations
 SimulationInput = Annotated[Union[PVSimulationInput], Field(discriminator="type")]
@@ -24,50 +22,6 @@ def get_simulator(input_: SimulationInput) -> Simulator:
 
 class ExAnteData(EvaluationInput):
     """Ex-ante data for simulation analysis."""
-
-
-class SimulationSummary(BaseModel):
-    """Summary of a simulation including ex-ante, simulation results, ex-post, and comparisons."""
-
-    ex_ante: dict[str, TimeDataFrame | dict[str, float]]
-    simulation_result: dict[str, TimeDataFrame | dict[str, float]]
-    ex_post: dict[str, TimeDataFrame | dict[str, float]]
-    comparison: dict[str, dict[str, TimeDataFrame | dict[str, float]]]
-
-    @classmethod
-    def from_simulation(
-        cls,
-        ex_ante: dict[str, pd.DataFrame | pd.Series],
-        simulation_result: dict[str, pd.DataFrame | pd.Series],
-        ex_post: dict[str, pd.DataFrame | pd.Series],
-        comparison: dict[str, dict[str, pd.DataFrame | pd.Series]],
-    ) -> Self:
-        """Create a SimulationSummary from simulation data."""
-        ea = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
-            for k, v in ex_ante.items()
-        }
-        sr = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
-            for k, v in simulation_result.items()
-        }
-        ep = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
-            for k, v in ex_post.items()
-        }
-        c = {
-            k: {
-                kk: TimeDataFrame.from_pandas(vv) if isinstance(vv, pd.DataFrame) else vv.to_dict()
-                for kk, vv in v.items()
-            }
-            for k, v in comparison.items()
-        }
-        return cls(
-            ex_ante=ea,
-            simulation_result=sr,
-            ex_post=ep,
-            comparison=c,
-        )
 
 
 class FullSimulationInput(BaseModel):

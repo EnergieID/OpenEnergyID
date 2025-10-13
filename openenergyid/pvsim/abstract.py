@@ -11,8 +11,8 @@ from pydantic import Field
 
 from openenergyid.models import TimeSeries
 
+from ..abstractsim import SimulationInputAbstract, Simulator
 from ..const import ELECTRICITY_PRODUCED
-from ..simulations.abstract import SimulationInputAbstract, Simulator
 
 
 class PVSimulationInputAbstract(SimulationInputAbstract):

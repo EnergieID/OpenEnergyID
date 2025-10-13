@@ -5,8 +5,8 @@ from typing import Annotated, Union
 import pandas as pd
 from pydantic import Field
 
+from ..abstractsim import SimulationSummary
 from ..const import ELECTRICITY_DELIVERED, ELECTRICITY_EXPORTED, ELECTRICITY_PRODUCED
-from ..simulations import SimulationSummary
 from .elia import EliaPVSimulationInput, EliaPVSimulator
 from .pvlib import PVLibSimulationInput, PVLibSimulator
 
