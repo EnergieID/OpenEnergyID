@@ -1,10 +1,12 @@
-from typing import Annotated, Self, Union
+"""PV Simulation module."""
+
+from typing import Annotated, Union
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ..const import ELECTRICITY_DELIVERED, ELECTRICITY_EXPORTED, ELECTRICITY_PRODUCED
-from ..models import TimeDataFrame, TimeSeries
+from ..simulations import SimulationSummary
 from .elia import EliaPVSimulationInput, EliaPVSimulator
 from .pvlib import PVLibSimulationInput, PVLibSimulator
 
@@ -13,50 +15,8 @@ PVSimulationInput = Annotated[
 ]
 
 
-class PVSimulationSummary(BaseModel):
+class PVSimulationSummary(SimulationSummary):
     """Summary of a PV simulation including ex-ante, simulation results, ex-post, and comparisons."""
-
-    ex_ante: dict[str, TimeDataFrame | dict[str, float]]
-    simulation_result: dict[str, TimeSeries | dict[str, float]]
-    ex_post: dict[str, TimeDataFrame | dict[str, float]]
-    comparison: dict[str, dict[str, TimeDataFrame | dict[str, float]]]
-
-    @classmethod
-    def from_simulation(
-        cls,
-        ex_ante: dict[str, pd.DataFrame | pd.Series],
-        simulation_result: dict[str, pd.DataFrame | pd.Series],
-        ex_post: dict[str, pd.DataFrame | pd.Series],
-        comparison: dict[str, dict[str, pd.DataFrame | pd.Series]],
-    ) -> Self:
-        """Create a PVSimulationSummary from simulation data."""
-        ea = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
-            for k, v in ex_ante.items()
-        }
-        sr = {
-            k: TimeSeries.from_pandas(v.squeeze(axis=1))  # type: ignore
-            if isinstance(v, pd.DataFrame)
-            else v.to_dict()
-            for k, v in simulation_result.items()
-        }
-        ep = {
-            k: TimeDataFrame.from_pandas(v) if isinstance(v, pd.DataFrame) else v.to_dict()
-            for k, v in ex_post.items()
-        }
-        c = {
-            k: {
-                kk: TimeDataFrame.from_pandas(vv) if isinstance(vv, pd.DataFrame) else vv.to_dict()
-                for kk, vv in v.items()
-            }
-            for k, v in comparison.items()
-        }
-        return cls(
-            ex_ante=ea,
-            simulation_result=sr,
-            ex_post=ep,
-            comparison=c,
-        )
 
 
 def get_simulator(input_: PVSimulationInput) -> PVLibSimulator | EliaPVSimulator:

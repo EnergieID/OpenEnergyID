@@ -3,26 +3,25 @@ This module contains the abstract base class for PVSimulator.
 """
 
 import datetime as dt
-from abc import ABC, abstractmethod
-from typing import Self, cast
+from abc import ABC
+from typing import cast
 
 import pandas as pd
-from aiohttp import ClientSession
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from openenergyid.models import TimeSeries
 
 from ..const import ELECTRICITY_PRODUCED
+from ..simulations.abstract import SimulationInputAbstract, Simulator
 
 
-class PVSimulationInputAbstract(BaseModel):
+class PVSimulationInputAbstract(SimulationInputAbstract):
     """
     Input parameters for the PV simulation.
     """
 
     start: dt.date
     end: dt.date
-    type: str  # tag
     result_resolution: str = Field(
         "15min",
         description="Resolution of the simulation results",
@@ -30,7 +29,7 @@ class PVSimulationInputAbstract(BaseModel):
     )
 
 
-class PVSimulator(ABC):
+class PVSimulator(Simulator, ABC):
     """
     An abstract base class for PV simulators.
     """
@@ -47,13 +46,6 @@ class PVSimulator(ABC):
             self._simulation_results = cast(pd.Series, results)
         return self._simulation_results
 
-    @abstractmethod
-    def simulate(self, **kwargs) -> pd.Series:
-        """
-        Run the simulation and return the results as a Series.
-        """
-        raise NotImplementedError()
-
     def result_to_timeseries(self):
         """
         Convert the simulation results to a TimeSeries object.
@@ -66,17 +58,3 @@ class PVSimulator(ABC):
         Convert the simulation results to a DataFrame.
         """
         return self.simulation_results.rename(ELECTRICITY_PRODUCED).to_frame()
-
-    @classmethod
-    def from_pydantic(cls, input_: PVSimulationInputAbstract) -> Self:
-        """
-        Create an instance of the simulator from Pydantic input data.
-        """
-        return cls(**input_.model_dump())
-
-    @abstractmethod
-    async def load_resources(self, session: ClientSession) -> None:
-        """
-        Asynchronously load any required resources using the provided session.
-        """
-        raise NotImplementedError()

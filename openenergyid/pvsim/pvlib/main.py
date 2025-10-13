@@ -32,7 +32,7 @@ class PVLibSimulationInput(PVSimulationInputAbstract):
     Input parameters for the PVLibSimulator.
     """
 
-    type: Literal["pvlib"] = Field("pvlib", frozen=True)  # tag
+    type: Literal["pvlibsimulation"] = Field("pvlibsimulation", frozen=True)  # tag
     modelchain: ModelChainUnion
 
 

@@ -17,7 +17,7 @@ from openenergyid.pvsim.abstract import PVSimulationInputAbstract, PVSimulator
 class EliaPVSimulationInput(PVSimulationInputAbstract):
     """Input parameters for the Elia PV simulation."""
 
-    type: Literal["elia"] = Field("elia", frozen=True)  # tag
+    type: Literal["eliapvsimulation"] = Field("eliapvsimulation", frozen=True)  # tag
     region: elia.Region
     panel_power: float = Field(..., gt=0, description="Installed panel power in W")
     inverter_power: float = Field(..., gt=0, description="Installed inverter power in W")
