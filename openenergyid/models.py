@@ -60,6 +60,14 @@ class TimeSeriesBase(BaseModel):
                 return cls.model_validate_json(file.read(), **kwargs)
         raise ValueError("Either string or path must be provided.")
 
+    def first_timestamp(self) -> dt.datetime:
+        """Get the first timestamp in the index."""
+        return min(self.index)
+
+    def last_timestamp(self) -> dt.datetime:
+        """Get the last timestamp in the index."""
+        return max(self.index)
+
 
 class TimeSeries(TimeSeriesBase):
     """

@@ -17,8 +17,7 @@
         "visualstudioexptteam.vscodeintellicode",
         "esbenp.prettier-vscode",
         "GitHub.vscode-pull-request-github",
-        "mhutchie.git-graph",
-        "ms-toolsai.jupyter"
+        "mhutchie.git-graph"
       ],
       "settings": {
         "python.pythonPath": "/usr/local/bin/python",

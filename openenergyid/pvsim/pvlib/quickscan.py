@@ -48,7 +48,9 @@ class QuickPVSystemModel(PVSystemModel):
 
         # choose policy: reject or overwrite if user also sent pdc0
         if "pdc0" in inv_params:
-            raise ValueError("Provide either 'pac' or 'inverter_parameters.pdc0', not both.")
+            if inv_params["pdc0"] != p_inverter / self.inverter_efficiency:
+                raise ValueError("Provide either 'pac' or 'inverter_parameters.pdc0', not both.")
+            return self
 
         inv_params = dict(inv_params)  # avoid mutating shared defaults
         inv_params["pdc0"] = p_inverter / self.inverter_efficiency
@@ -65,6 +67,22 @@ class QuickPVSystemModel(PVSystemModel):
         mod_params = dict(mod_params)  # avoid mutating shared defaults
         mod_params["pdc0"] = p_module
         object.__setattr__(self, "module_parameters", mod_params)
+        return self
+
+    @model_validator(mode="after")
+    def _push_settings_to_arrays(self):
+        """
+        If settings are specified for the entire system, but not per array,
+        and there are arrays defined, push the settings to each array.
+        """
+        if hasattr(self, "arrays") and self.arrays is not None:  # type: ignore
+            for array in self.arrays:  # type: ignore
+                if not array.module_parameters:
+                    object.__setattr__(array, "module_parameters", self.module_parameters)
+                if not array.module_type:
+                    object.__setattr__(array, "module_type", self.module_type)
+                if not array.mount.racking_model:
+                    object.__setattr__(array.mount, "racking_model", self.racking_model)
         return self
 
 
