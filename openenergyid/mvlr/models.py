@@ -1,16 +1,15 @@
 """Models for multivariable linear regression."""
 
 from typing import Any
-import pandas as pd
 
-from pydantic import BaseModel, Field, ConfigDict
+import pandas as pd
 import statsmodels.formula.api as fm
+from pydantic import BaseModel, ConfigDict, Field
 
 from openenergyid.enums import Granularity
 from openenergyid.models import TimeDataFrame
 
 from .mvlr import MultiVariableLinearRegression
-
 
 COLUMN_TEMPERATUREEQUIVALENT = "temperatureEquivalent"
 

@@ -1,7 +1,7 @@
 """Main module for the MultiVariableLinearRegression class."""
 
-from .models import MultiVariableRegressionInput, MultiVariableRegressionResult
 from .helpers import resample_input_data
+from .models import MultiVariableRegressionInput, MultiVariableRegressionResult
 from .mvlr import MultiVariableLinearRegression
 
 

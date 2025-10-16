@@ -1,9 +1,20 @@
 """Main Calcuation Module for Energy Sharing."""
 
 import pandas as pd
+
+from .const import (
+    GROSS_INJECTION,
+    GROSS_OFFTAKE,
+    KEY,
+    NET_INJECTION,
+    NET_OFFTAKE,
+    SHARED_ENERGY,
+)
+from .data_formatting import (
+    create_multi_index_output_frame,
+    result_to_input_for_reiteration,
+)
 from .models import CalculationMethod
-from .const import GROSS_INJECTION, GROSS_OFFTAKE, KEY, NET_INJECTION, NET_OFFTAKE, SHARED_ENERGY
-from .data_formatting import create_multi_index_output_frame, result_to_input_for_reiteration
 
 
 def _calculate(df: pd.DataFrame, method: CalculationMethod) -> pd.DataFrame:
