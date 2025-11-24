@@ -90,13 +90,17 @@ class BaseloadAnalyzer:
             .sort("timestamp")
         )
 
-    def analyze(self, power_lf: pl.LazyFrame, reporting_granularity: str = "1h") -> pl.LazyFrame:
-        """Analyze power consumption data to calculate baseload and total energy metrics.
+    def analyze(
+        self, power_lf: pl.LazyFrame, reporting_granularity: str = "1h"
+    ) -> tuple[pl.LazyFrame, float]:
+        """
+        Analyze power consumption data to calculate baseload and total energy metrics.
 
         Takes power readings (in watts) with 15-minute intervals and calculates:
         - Daily baseload power using a percentile threshold
         - Energy consumption from baseload vs total consumption
         - Average power metrics
+        - Global median baseload value for the entire period
 
         The analysis happens in three steps:
         1. Calculate the daily baseload power level using the configured percentile
@@ -107,8 +111,8 @@ class BaseloadAnalyzer:
         ----------
         power_lf : pl.LazyFrame
             Power consumption data with columns:
-            - timestamp: Datetime in configured timezone
-            - power: Power readings in watts
+                - timestamp: Datetime in configured timezone
+                - power: Power readings in watts
 
         reporting_granularity : str, default="1h"
             Time period for aggregating results. Must be a valid Polars interval string
@@ -116,25 +120,30 @@ class BaseloadAnalyzer:
 
         Returns
         -------
-        pl.LazyFrame
-            Analysis results with metrics per reporting period:
-            - timestamp: Start of reporting period
-            - consumption_due_to_baseload_in_kilowatthour: Baseload energy
-            - total_consumption_in_kilowatthour: Total energy
-            - consumption_not_due_to_baseload_in_kilowatthour: Non-baseload energy
-            - average_daily_baseload_in_watt: Average baseload power level
-            - average_power_in_watt: Average total power
-            - baseload_ratio: Fraction of energy from baseload
+        tuple[pl.LazyFrame, float]
+            - Analysis results (pl.LazyFrame) with metrics per reporting period:
+                - timestamp: Start of reporting period
+                - consumption_due_to_baseload_in_kilowatthour: Baseload energy
+                - total_consumption_in_kilowatthour: Total energy
+                - consumption_not_due_to_baseload_in_kilowatthour: Non-baseload energy
+                - average_daily_baseload_in_watt: Average baseload power level
+                - average_power_in_watt: Average total power
+                - baseload_ratio: Fraction of energy from baseload
+                - consumption_due_to_median_baseload_in_kilowatthour: Idealized consumption using global median baseload
+            - global_median_baseload (float): The global median baseload value in watts for the entire period
         """
         # Step 1: Calculate the daily baseload level
         # Group power readings by day and find the threshold power level that represents baseload
         daily_baseload = power_lf.group_by_dynamic("timestamp", every="1d").agg(
             pl.col("power").quantile(self.quantile).alias("daily_baseload")
         )
+        # calculate median
+        global_median_baseload = (
+            daily_baseload.select(pl.col("daily_baseload").median()).collect().item()
+        )
 
-        # Step 2 & 3: Join baseload data and aggregate metrics
-        return (
-            # Join the daily baseload level with original power readings
+        # Join the daily baseload level with original power readings
+        results = (
             # Using asof join since baseload changes daily but readings are every 15min
             power_lf.join_asof(daily_baseload, on="timestamp")
             # Group into requested reporting periods
@@ -153,6 +162,10 @@ class BaseloadAnalyzer:
                     # Average power levels during the period
                     pl.col("daily_baseload").mean().alias("average_daily_baseload_in_watt"),
                     pl.col("power").mean().alias("average_power_in_watt"),
+                    # median baseload kWh
+                    (pl.len() * 0.25 * global_median_baseload / 1000).alias(
+                        "consumption_due_to_median_baseload_in_kilowatthour"
+                    ),
                 ]
             )
             # Calculate derived metrics
@@ -173,3 +186,5 @@ class BaseloadAnalyzer:
                 ]
             )
         )
+        # Step 2 & 3: Join baseload data and aggregate metrics
+        return results, global_median_baseload
