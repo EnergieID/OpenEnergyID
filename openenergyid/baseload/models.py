@@ -29,3 +29,4 @@ class BaseloadResultSchema(pa.DataFrameModel):
     average_power_in_watt: float = pa.Field(ge=0)
     consumption_not_due_to_baseload_in_kilowatthour: float
     baseload_ratio: float = pa.Field(ge=0, le=2)
+    consumption_due_to_median_baseload_in_kilowatthour: float = pa.Field(ge=0)
