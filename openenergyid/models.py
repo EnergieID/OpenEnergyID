@@ -101,8 +101,8 @@ class TimeSeries(TimeSeriesBase):
         return cls(name=name, data=data.tolist(), index=data.index.tolist())
 
     def to_pandas(self, timezone: str = "UTC") -> pd.Series:
-        """Convert to a Pandas Series."""
-        series = pd.Series(self.data, name=self.name, index=self.index)
+        """Convert to a Pandas Series with float dtype and None as NaN."""
+        series = pd.Series(self.data, name=self.name, index=self.index, dtype=float)
         series.index = pd.to_datetime(series.index, utc=True)
         return series.tz_convert(timezone)
 
