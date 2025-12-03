@@ -1,6 +1,12 @@
 """Open Energy ID Python SDK."""
 
-__version__ = "0.1.30"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("openenergyid")
+except PackageNotFoundError:
+    # Package is not installed
+    __version__ = "unknown"
 
 from .enums import Granularity
 from .models import TimeDataFrame, TimeSeries

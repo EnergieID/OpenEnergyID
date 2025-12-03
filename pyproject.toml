@@ -1,6 +1,6 @@
 [project]
 name = "openenergyid"
-version = "0.1.30"
+version = "0.1.32"
 description = "Open Source Python library for energy analytics and simulations"
 authors = [
     { name = "Jan Pecinovsky", email = "jan@energieid.be" },
