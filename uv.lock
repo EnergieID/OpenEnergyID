@@ -1596,7 +1596,7 @@ wheels = [
 
 [[package]]
 name = "openenergyid"
-version = "0.1.31"
+version = "0.1.32"
 source = { virtual = "." }
 dependencies = [
     { name = "aiohttp" },
