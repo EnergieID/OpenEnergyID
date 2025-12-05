@@ -12,6 +12,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    if: github.ref == 'refs/heads/main' # Only run when tag is pushed to main branch
 
     steps:
       - uses: actions/checkout@v4
