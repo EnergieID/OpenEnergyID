@@ -47,7 +47,12 @@ class BaseloadAnalyzer:
         """Converts energy readings into a power consumption time series.
 
         Transforms 15-minute energy readings (kilowatt-hours) into instantaneous
-        power readings (watts) while handling timezone conversion.
+        power readings (watts) while handling timezone conversion. Input must be a
+        Polars LazyFrame with columns:
+            - timestamp: timezone-aware datetime (e.g. "2025-01-01T00:00:00+01:00")
+            - total: kWh for the 15-minute interval
+        Example row (kWh input):
+            {"timestamp": "2025-01-01T00:00:00+01:00", "total": 0.031}
 
         Parameters
         ----------
