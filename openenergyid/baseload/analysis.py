@@ -1,9 +1,7 @@
-"""Baseload Power Consumption Analysis Module
+"""Baseload Power Consumption Analysis Module.
 
-This module provides tools for analyzing electrical power consumption patterns to identify
-and quantify baseload - the continuous background power usage in electrical systems.
-It uses sophisticated time-series analysis to detect consistent minimum power draws
-that represent always-on devices and systems.
+Provides tools for detecting continuous background power usage using Polars LazyFrames,
+keeping transformations lazy to support larger time-series datasets.
 """
 
 import polars as pl
@@ -34,23 +32,27 @@ class BaseloadAnalyzer:
         Timezone for analysis. All timestamps will be converted to this timezone
         to ensure correct daily boundaries and consistent reporting periods.
 
-    Example Usage
-    ------------
-    >>> analyzer = BaseloadAnalyzer(quantile=0.05)
-    >>> power_data = analyzer.prepare_power_seriespolars(energy_readings)
-    >>> hourly_analysis = analyzer.analyze(power_data, "1h")
-    >>> monthly_analysis = analyzer.analyze(power_data, "1mo")
+    Example
+    -------
+    >>> analyzer = BaseloadAnalyzer(timezone="Europe/Brussels", quantile=0.05)
+    >>> power_data = analyzer.prepare_power_series(energy_readings)
+    >>> hourly_analysis, _ = analyzer.analyze(power_data, "1h")
     """
 
     def __init__(self, timezone: str, quantile: float = 0.05):
         self.quantile = quantile
         self.timezone = timezone
 
-    def prepare_power_seriespolars(self, energy_lf: pl.LazyFrame) -> pl.LazyFrame:
+    def prepare_power_series(self, energy_lf: pl.LazyFrame) -> pl.LazyFrame:
         """Converts energy readings into a power consumption time series.
 
         Transforms 15-minute energy readings (kilowatt-hours) into instantaneous
-        power readings (watts) while handling timezone conversion.
+        power readings (watts) while handling timezone conversion. Input must be a
+        Polars LazyFrame with columns:
+            - timestamp: timezone-aware datetime (e.g. "2025-01-01T00:00:00+01:00")
+            - total: kWh for the 15-minute interval
+        Example row (kWh input):
+            {"timestamp": "2025-01-01T00:00:00+01:00", "total": 0.031}
 
         Parameters
         ----------
@@ -77,16 +79,16 @@ class BaseloadAnalyzer:
         return (
             energy_lf.with_columns(
                 [
-                    # Convert timezone
                     pl.col("timestamp")
                     .dt.replace_time_zone("UTC")
                     .dt.convert_time_zone(self.timezone)
                     .alias("timestamp"),
-                    # Convert to watts and clip negative values
-                    (pl.col("total") * 4000).clip(0).alias("power"),
+                    (pl.col("total") * 4000).alias("power"),
                 ]
             )
             .drop("total")
+            .filter(pl.col("timestamp").is_not_null() & pl.col("power").is_not_null())
+            .with_columns(pl.col("power").clip(lower_bound=0))
             .sort("timestamp")
         )
 
@@ -96,7 +98,8 @@ class BaseloadAnalyzer:
         """
         Analyze power consumption data to calculate baseload and total energy metrics.
 
-        Takes power readings (in watts) with 15-minute intervals and calculates:
+        Accepts either prepared power readings (timestamp/power) or raw energy readings
+        (timestamp/total). Calculates:
         - Daily baseload power using a percentile threshold
         - Energy consumption from baseload vs total consumption
         - Average power metrics
@@ -110,9 +113,11 @@ class BaseloadAnalyzer:
         Parameters
         ----------
         power_lf : pl.LazyFrame
-            Power consumption data with columns:
+            Data with columns:
                 - timestamp: Datetime in configured timezone
                 - power: Power readings in watts
+            Alternatively accepts:
+                - timestamp and total (kWh/15min) and will convert to power.
 
         reporting_granularity : str, default="1h"
             Time period for aggregating results. Must be a valid Polars interval string
@@ -132,46 +137,88 @@ class BaseloadAnalyzer:
                 - consumption_due_to_median_baseload_in_kilowatthour: Idealized consumption using global median baseload
             - global_median_baseload (float): The global median baseload value in watts for the entire period
         """
-        # Step 1: Calculate the daily baseload level
-        # Group power readings by day and find the threshold power level that represents baseload
-        daily_baseload = power_lf.group_by_dynamic("timestamp", every="1d").agg(
-            pl.col("power").quantile(self.quantile).alias("daily_baseload")
-        )
-        # calculate median
-        global_median_baseload = (
-            daily_baseload.select(pl.col("daily_baseload").median()).collect().item()
+        power_lf = self._ensure_power_frame(power_lf)
+        power_lf = (
+            power_lf.select(["timestamp", "power"])
+            .filter(pl.col("timestamp").is_not_null() & pl.col("power").is_not_null())
+            .with_columns(pl.col("power").clip(lower_bound=0))
+            .sort("timestamp")
         )
 
-        # Join the daily baseload level with original power readings
+        row_count = power_lf.select(pl.len()).collect().item()
+        if row_count == 0:
+            empty_result = pl.LazyFrame(
+                schema={
+                    "timestamp": pl.Datetime(time_zone=self.timezone),
+                    "consumption_due_to_baseload_in_kilowatthour": pl.Float64,
+                    "total_consumption_in_kilowatthour": pl.Float64,
+                    "consumption_not_due_to_baseload_in_kilowatthour": pl.Float64,
+                    "average_daily_baseload_in_watt": pl.Float64,
+                    "average_power_in_watt": pl.Float64,
+                    "baseload_ratio": pl.Float64,
+                    "consumption_due_to_median_baseload_in_kilowatthour": pl.Float64,
+                }
+            )
+            return empty_result, 0.0
+
+        daily_baseload = (
+            power_lf.group_by_dynamic("timestamp", every="1d")
+            .agg(
+                pl.col("power")
+                .filter(pl.col("power") > 0)
+                .quantile(self.quantile)
+                .alias("daily_baseload")
+            )
+            .filter(pl.col("daily_baseload").is_not_null())
+        )
+
+        baseload_count = daily_baseload.select(pl.len()).collect().item()
+        if baseload_count == 0:
+            empty_result = pl.LazyFrame(
+                schema={
+                    "timestamp": pl.Datetime(time_zone=self.timezone),
+                    "consumption_due_to_baseload_in_kilowatthour": pl.Float64,
+                    "total_consumption_in_kilowatthour": pl.Float64,
+                    "consumption_not_due_to_baseload_in_kilowatthour": pl.Float64,
+                    "average_daily_baseload_in_watt": pl.Float64,
+                    "average_power_in_watt": pl.Float64,
+                    "baseload_ratio": pl.Float64,
+                    "consumption_due_to_median_baseload_in_kilowatthour": pl.Float64,
+                }
+            )
+            return empty_result, 0.0
+
+        global_median_baseload = (
+            daily_baseload.select(pl.col("daily_baseload").median()).collect().item()
+        ) or 0.0
+
         results = (
-            # Using asof join since baseload changes daily but readings are every 15min
             power_lf.join_asof(daily_baseload, on="timestamp")
-            # Group into requested reporting periods
             .group_by_dynamic("timestamp", every=reporting_granularity)
             .agg(
                 [
-                    # Energy calculations:
-                    # Each 15min power reading (watts) represents 0.25 hours
-                    # Convert to kWh: watts * 0.25h * (1kW/1000W)
-                    (pl.col("daily_baseload").sum() * 0.25 / 1000).alias(
+                    (pl.col("daily_baseload").fill_null(0).sum() * 0.25 / 1000).alias(
                         "consumption_due_to_baseload_in_kilowatthour"
                     ),
                     (pl.col("power").sum() * 0.25 / 1000).alias(
                         "total_consumption_in_kilowatthour"
                     ),
-                    # Average power levels during the period
                     pl.col("daily_baseload").mean().alias("average_daily_baseload_in_watt"),
                     pl.col("power").mean().alias("average_power_in_watt"),
-                    # median baseload kWh
                     (pl.len() * 0.25 * global_median_baseload / 1000).alias(
                         "consumption_due_to_median_baseload_in_kilowatthour"
                     ),
                 ]
             )
-            # Calculate derived metrics
             .with_columns(
                 [
-                    # Energy consumed above baseload level
+                    pl.when(
+                        pl.col("consumption_due_to_baseload_in_kilowatthour")
+                        <= pl.col("total_consumption_in_kilowatthour")
+                    )
+                    .then(pl.col("consumption_due_to_baseload_in_kilowatthour"))
+                    .otherwise(pl.col("total_consumption_in_kilowatthour"))
+                    .alias("consumption_due_to_baseload_in_kilowatthour"),
                     (
                         pl.col("total_consumption_in_kilowatthour")
                         - pl.col("consumption_due_to_baseload_in_kilowatthour")
@@ -186,5 +233,16 @@ class BaseloadAnalyzer:
                 ]
             )
         )
-        # Step 2 & 3: Join baseload data and aggregate metrics
+
         return results, global_median_baseload
+
+    def _ensure_power_frame(self, frame: pl.LazyFrame) -> pl.LazyFrame:
+        """Ensure a LazyFrame contains power data; convert from energy if needed."""
+        cols = set(frame.collect_schema().names())
+        if {"timestamp", "power"} <= cols:
+            return frame
+        if {"timestamp", "total"} <= cols:
+            return self.prepare_power_series(frame)
+        raise ValueError(
+            "Expected LazyFrame with columns 'timestamp' and 'power' or 'timestamp' and 'total'."
+        )

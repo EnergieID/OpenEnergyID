@@ -12,6 +12,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - uses: actions/checkout@v4
