@@ -4,7 +4,40 @@ Provides tools for detecting continuous background power usage using Polars Lazy
 keeping transformations lazy to support larger time-series datasets.
 """
 
+from dataclasses import dataclass
+
 import polars as pl
+
+
+@dataclass
+class BaseloadAnalysisResult:
+    """Complete result from baseload analysis.
+
+    Attributes
+    ----------
+    results : pl.LazyFrame
+        Per-period metrics (hourly, daily, monthly, etc.) with columns:
+        - timestamp: Start of reporting period
+        - consumption_due_to_baseload_in_kilowatthour
+        - total_consumption_in_kilowatthour
+        - consumption_not_due_to_baseload_in_kilowatthour
+        - average_daily_baseload_in_watt
+        - average_power_in_watt
+        - baseload_ratio
+        - consumption_due_to_median_baseload_in_kilowatthour
+
+    global_median_baseload : float
+        The overall median of daily baseload values across the entire period, in watts.
+
+    monthly_median_baseloads : pl.LazyFrame
+        Monthly aggregated median baseload values with columns:
+        - timestamp: Start of month
+        - monthly_median_baseload_in_watt: Median of daily baseload values for that month
+    """
+
+    results: pl.LazyFrame
+    global_median_baseload: float
+    monthly_median_baseloads: pl.LazyFrame
 
 
 class BaseloadAnalyzer:
@@ -94,7 +127,7 @@ class BaseloadAnalyzer:
 
     def analyze(
         self, power_lf: pl.LazyFrame, reporting_granularity: str = "1h"
-    ) -> tuple[pl.LazyFrame, float]:
+    ) -> BaseloadAnalysisResult:
         """
         Analyze power consumption data to calculate baseload and total energy metrics.
 
@@ -104,6 +137,7 @@ class BaseloadAnalyzer:
         - Energy consumption from baseload vs total consumption
         - Average power metrics
         - Global median baseload value for the entire period
+        - Monthly median baseload values
 
         The analysis happens in three steps:
         1. Calculate the daily baseload power level using the configured percentile
@@ -125,17 +159,11 @@ class BaseloadAnalyzer:
 
         Returns
         -------
-        tuple[pl.LazyFrame, float]
-            - Analysis results (pl.LazyFrame) with metrics per reporting period:
-                - timestamp: Start of reporting period
-                - consumption_due_to_baseload_in_kilowatthour: Baseload energy
-                - total_consumption_in_kilowatthour: Total energy
-                - consumption_not_due_to_baseload_in_kilowatthour: Non-baseload energy
-                - average_daily_baseload_in_watt: Average baseload power level
-                - average_power_in_watt: Average total power
-                - baseload_ratio: Fraction of energy from baseload
-                - consumption_due_to_median_baseload_in_kilowatthour: Idealized consumption using global median baseload
-            - global_median_baseload (float): The global median baseload value in watts for the entire period
+        BaseloadAnalysisResult
+            A dataclass containing:
+            - results: pl.LazyFrame with metrics per reporting period
+            - global_median_baseload: The overall median baseload in watts
+            - monthly_median_baseloads: pl.LazyFrame with monthly median baseload values
         """
         power_lf = self._ensure_power_frame(power_lf)
         power_lf = (
@@ -147,19 +175,7 @@ class BaseloadAnalyzer:
 
         row_count = power_lf.select(pl.len()).collect().item()
         if row_count == 0:
-            empty_result = pl.LazyFrame(
-                schema={
-                    "timestamp": pl.Datetime(time_zone=self.timezone),
-                    "consumption_due_to_baseload_in_kilowatthour": pl.Float64,
-                    "total_consumption_in_kilowatthour": pl.Float64,
-                    "consumption_not_due_to_baseload_in_kilowatthour": pl.Float64,
-                    "average_daily_baseload_in_watt": pl.Float64,
-                    "average_power_in_watt": pl.Float64,
-                    "baseload_ratio": pl.Float64,
-                    "consumption_due_to_median_baseload_in_kilowatthour": pl.Float64,
-                }
-            )
-            return empty_result, 0.0
+            return self._empty_result()
 
         daily_baseload = (
             power_lf.group_by_dynamic("timestamp", every="1d")
@@ -174,23 +190,16 @@ class BaseloadAnalyzer:
 
         baseload_count = daily_baseload.select(pl.len()).collect().item()
         if baseload_count == 0:
-            empty_result = pl.LazyFrame(
-                schema={
-                    "timestamp": pl.Datetime(time_zone=self.timezone),
-                    "consumption_due_to_baseload_in_kilowatthour": pl.Float64,
-                    "total_consumption_in_kilowatthour": pl.Float64,
-                    "consumption_not_due_to_baseload_in_kilowatthour": pl.Float64,
-                    "average_daily_baseload_in_watt": pl.Float64,
-                    "average_power_in_watt": pl.Float64,
-                    "baseload_ratio": pl.Float64,
-                    "consumption_due_to_median_baseload_in_kilowatthour": pl.Float64,
-                }
-            )
-            return empty_result, 0.0
+            return self._empty_result()
 
         global_median_baseload = (
             daily_baseload.select(pl.col("daily_baseload").median()).collect().item()
         ) or 0.0
+
+        # Compute monthly median baseloads from daily values
+        monthly_median_baseloads = daily_baseload.group_by_dynamic("timestamp", every="1mo").agg(
+            pl.col("daily_baseload").median().alias("monthly_median_baseload_in_watt")
+        )
 
         results = (
             power_lf.join_asof(daily_baseload, on="timestamp")
@@ -210,20 +219,23 @@ class BaseloadAnalyzer:
                     ),
                 ]
             )
+            # First: cap baseload to not exceed total consumption
+            .with_columns(
+                pl.min_horizontal(
+                    pl.col("consumption_due_to_baseload_in_kilowatthour"),
+                    pl.col("total_consumption_in_kilowatthour"),
+                ).alias("consumption_due_to_baseload_in_kilowatthour")
+            )
+            # Second: calculate derived columns using the capped baseload
             .with_columns(
                 [
-                    pl.when(
-                        pl.col("consumption_due_to_baseload_in_kilowatthour")
-                        <= pl.col("total_consumption_in_kilowatthour")
-                    )
-                    .then(pl.col("consumption_due_to_baseload_in_kilowatthour"))
-                    .otherwise(pl.col("total_consumption_in_kilowatthour"))
-                    .alias("consumption_due_to_baseload_in_kilowatthour"),
                     (
                         pl.col("total_consumption_in_kilowatthour")
                         - pl.col("consumption_due_to_baseload_in_kilowatthour")
-                    ).alias("consumption_not_due_to_baseload_in_kilowatthour"),
-                    pl.when(pl.col("total_consumption_in_kilowatthour") != 0)
+                    )
+                    .clip(lower_bound=0)
+                    .alias("consumption_not_due_to_baseload_in_kilowatthour"),
+                    pl.when(pl.col("total_consumption_in_kilowatthour") > 0)
                     .then(
                         pl.col("consumption_due_to_baseload_in_kilowatthour")
                         / pl.col("total_consumption_in_kilowatthour")
@@ -234,7 +246,37 @@ class BaseloadAnalyzer:
             )
         )
 
-        return results, global_median_baseload
+        return BaseloadAnalysisResult(
+            results=results,
+            global_median_baseload=global_median_baseload,
+            monthly_median_baseloads=monthly_median_baseloads,
+        )
+
+    def _empty_result(self) -> BaseloadAnalysisResult:
+        """Return an empty BaseloadAnalysisResult for edge cases with no valid data."""
+        empty_results = pl.LazyFrame(
+            schema={
+                "timestamp": pl.Datetime(time_zone=self.timezone),
+                "consumption_due_to_baseload_in_kilowatthour": pl.Float64,
+                "total_consumption_in_kilowatthour": pl.Float64,
+                "consumption_not_due_to_baseload_in_kilowatthour": pl.Float64,
+                "average_daily_baseload_in_watt": pl.Float64,
+                "average_power_in_watt": pl.Float64,
+                "baseload_ratio": pl.Float64,
+                "consumption_due_to_median_baseload_in_kilowatthour": pl.Float64,
+            }
+        )
+        empty_monthly = pl.LazyFrame(
+            schema={
+                "timestamp": pl.Datetime(time_zone=self.timezone),
+                "monthly_median_baseload_in_watt": pl.Float64,
+            }
+        )
+        return BaseloadAnalysisResult(
+            results=empty_results,
+            global_median_baseload=0.0,
+            monthly_median_baseloads=empty_monthly,
+        )
 
     def _ensure_power_frame(self, frame: pl.LazyFrame) -> pl.LazyFrame:
         """Ensure a LazyFrame contains power data; convert from energy if needed."""

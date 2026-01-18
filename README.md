@@ -22,9 +22,20 @@ OpenEnergyID provides a variety of analysis modules to help you work with your e
 
 The baseload analysis module helps you determine the baseload consumption of a building or a portfolio of buildings.
 
-- Use `BaseloadAnalyzer(timezone="Europe/Brussels")`, prepare data with `prepare_power_series(energy_lf)` and then call `analyze(power_lf, "1h")`.
-- Accepts either energy (`timestamp`/`total` in kWh per 15 min) or precomputed power (`timestamp`/`power` watts); gapped or zero-valued intervals are kept and handled safely.
-- Outputs energy splits (baseload vs total) and baseload ratios per chosen reporting granularity, keeping computations lazy via Polars `LazyFrame`.
+```python
+from openenergyid.baseload import BaseloadAnalyzer
+
+analyzer = BaseloadAnalyzer(timezone="Europe/Brussels", quantile=0.05)
+result = analyzer.analyze(energy_data, "1mo")
+
+result.results.collect()              # Per-period metrics (LazyFrame)
+result.global_median_baseload         # Overall median baseload in watts
+result.monthly_median_baseloads.collect()  # Monthly median baseloads (LazyFrame)
+```
+
+- Accepts either energy (`timestamp`/`total` in kWh per 15 min) or power (`timestamp`/`power` watts)
+- Returns `BaseloadAnalysisResult` with results, global median, and monthly median baseloads
+- Keeps computations lazy via Polars `LazyFrame` until `.collect()` is called
 
 ### Capacity Analysis
 
