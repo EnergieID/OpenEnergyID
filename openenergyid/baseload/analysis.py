@@ -6,7 +6,9 @@ keeping transformations lazy to support larger time-series datasets.
 
 from dataclasses import dataclass
 
+import pandas as pd
 import polars as pl
+import pvlib
 
 
 @dataclass
@@ -55,26 +57,61 @@ class BaseloadAnalyzer:
 
     Parameters
     ----------
+    timezone : str
+        Timezone for analysis. All timestamps will be converted to this timezone
+        to ensure correct daily boundaries and consistent reporting periods.
+
     quantile : float, default=0.05
         Defines what portion of lowest daily readings to consider as baseload.
         The default 0.05 (5%) corresponds to roughly 72 minutes of lowest
         consumption per day, which helps filter out brief power dips while
         capturing true baseload patterns.
 
-    timezone : str
-        Timezone for analysis. All timestamps will be converted to this timezone
-        to ensure correct daily boundaries and consistent reporting periods.
+    nighttime_only : bool, default=False
+        If True, filter to only nighttime readings before analysis.
+        Use this when PV production exists but is not metered, as daytime
+        import readings will be artificially low due to unmeasured solar production.
+
+    location : tuple[float, float] | None, default=None
+        Latitude and longitude for solar position calculation, as (lat, lon).
+        Only used when nighttime_only=True. If None, defaults to Brussels (50.85, 4.35).
+
+    solar_elevation_threshold : float, default=0.0
+        Sun elevation angle (degrees) below which is considered night.
+        Only used when nighttime_only=True.
+        - 0.0: Geometric sunset (sun at horizon) - recommended default
+        - -6.0: Civil twilight (sky visibly dark)
+        - -12.0: Nautical twilight (conservative)
 
     Example
     -------
     >>> analyzer = BaseloadAnalyzer(timezone="Europe/Brussels", quantile=0.05)
     >>> power_data = analyzer.prepare_power_series(energy_readings)
     >>> hourly_analysis, _ = analyzer.analyze(power_data, "1h")
+
+    >>> # For homes with unmeasured PV production
+    >>> analyzer = BaseloadAnalyzer(
+    ...     timezone="Europe/Brussels",
+    ...     nighttime_only=True,
+    ... )
     """
 
-    def __init__(self, timezone: str, quantile: float = 0.05):
+    # Default location: Brussels, Belgium
+    DEFAULT_LOCATION = (50.85, 4.35)
+
+    def __init__(
+        self,
+        timezone: str,
+        quantile: float = 0.05,
+        nighttime_only: bool = False,
+        location: tuple[float, float] | None = None,
+        solar_elevation_threshold: float = 0.0,
+    ):
         self.quantile = quantile
         self.timezone = timezone
+        self.nighttime_only = nighttime_only
+        self.location = location if location is not None else self.DEFAULT_LOCATION
+        self.solar_elevation_threshold = solar_elevation_threshold
 
     def prepare_power_series(self, energy_lf: pl.LazyFrame) -> pl.LazyFrame:
         """Converts energy readings into a power consumption time series.
@@ -172,6 +209,10 @@ class BaseloadAnalyzer:
             .with_columns(pl.col("power").clip(lower_bound=0))
             .sort("timestamp")
         )
+
+        # Apply nighttime filter if enabled
+        if self.nighttime_only:
+            power_lf = self._apply_nighttime_filter(power_lf)
 
         row_count = power_lf.select(pl.len()).collect().item()
         if row_count == 0:
@@ -287,4 +328,49 @@ class BaseloadAnalyzer:
             return self.prepare_power_series(frame)
         raise ValueError(
             "Expected LazyFrame with columns 'timestamp' and 'power' or 'timestamp' and 'total'."
+        )
+
+    def _apply_nighttime_filter(self, power_lf: pl.LazyFrame) -> pl.LazyFrame:
+        """Filter power readings to only include nighttime hours.
+
+        Uses pvlib to calculate solar position for each timestamp and filters
+        to only include readings where the sun is below the configured threshold.
+
+        Parameters
+        ----------
+        power_lf : pl.LazyFrame
+            Power data with timestamp and power columns.
+
+        Returns
+        -------
+        pl.LazyFrame
+            Filtered power data containing only nighttime readings.
+        """
+        # Collect timestamps to calculate solar position
+        # This requires materializing the timestamps, but solar calc is fast
+        timestamps_df = power_lf.select("timestamp").collect()
+
+        if timestamps_df.is_empty():
+            return power_lf
+
+        # Convert to pandas DatetimeIndex for pvlib
+        timestamps_pd = pd.DatetimeIndex(timestamps_df["timestamp"].to_list())
+
+        # Calculate solar position
+        latitude, longitude = self.location
+        solar_pos = pvlib.solarposition.get_solarposition(timestamps_pd, latitude, longitude)
+
+        # Create mask for nighttime (elevation below threshold)
+        is_night = solar_pos["elevation"] < self.solar_elevation_threshold
+
+        # Convert mask to polars and join back
+        night_mask_df = pl.DataFrame(
+            {"timestamp": timestamps_df["timestamp"], "is_night": is_night.values}
+        )
+
+        # Filter to nighttime only
+        return (
+            power_lf.join(night_mask_df.lazy(), on="timestamp", how="inner")
+            .filter(pl.col("is_night"))
+            .drop("is_night")
         )
