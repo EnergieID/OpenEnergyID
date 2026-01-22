@@ -369,9 +369,10 @@ class BaseloadAnalyzer:
             {"timestamp": timestamps_df["timestamp"], "is_night": is_night.to_list()}
         )
 
-        # Filter to nighttime only
+        # Filter to nighttime only (sort required for downstream group_by_dynamic)
         return (
             power_lf.join(night_mask_df.lazy(), on="timestamp", how="inner")
             .filter(pl.col("is_night"))
             .drop("is_night")
+            .sort("timestamp")
         )
