@@ -361,11 +361,12 @@ class BaseloadAnalyzer:
         solar_pos = pvlib.solarposition.get_solarposition(timestamps_pd, latitude, longitude)
 
         # Create mask for nighttime (elevation below threshold)
-        is_night: pd.Series = solar_pos["elevation"] < self.solar_elevation_threshold
+        elevation: pd.Series = solar_pos["elevation"]  # type: ignore[assignment]
+        is_night = elevation < self.solar_elevation_threshold
 
         # Convert mask to polars and join back
         night_mask_df = pl.DataFrame(
-            {"timestamp": timestamps_df["timestamp"], "is_night": is_night.to_numpy()}
+            {"timestamp": timestamps_df["timestamp"], "is_night": is_night.to_list()}
         )
 
         # Filter to nighttime only
