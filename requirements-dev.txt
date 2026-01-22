@@ -236,6 +236,7 @@ numpy==2.2.6
     #   h5py
     #   matplotlib
     #   pandas
+    #   pandas-stubs
     #   patsy
     #   pvlib
     #   scipy
@@ -267,6 +268,7 @@ pandas==2.2.3
     #   pvlib
     #   seaborn
     #   statsmodels
+pandas-stubs==2.3.3.260113
 pandera==0.24.0
     # via openenergyid
 pandoc==2.4
@@ -444,6 +446,8 @@ typeguard==4.4.2
     # via pandera
 types-python-dateutil==2.9.0.20250516
     # via arrow
+types-pytz==2025.2.0.20251108
+    # via pandas-stubs
 typing-extensions==4.14.0
     # via
     #   aiosignal
