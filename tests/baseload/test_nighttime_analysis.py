@@ -237,3 +237,35 @@ class TestEdgeCases:
         assert result_standard.global_median_baseload == pytest.approx(
             result_night.global_median_baseload, rel=0.01
         )
+
+    def test_unsorted_input_data(self):
+        """Unsorted input data should still work correctly.
+
+        Regression test for sort order bug: the nighttime filter join
+        doesn't preserve sort order, which breaks group_by_dynamic.
+        """
+        import random
+
+        # Create nighttime data points in random order
+        start = datetime(2024, 6, 21, 1, 0)  # 1 AM - definitely nighttime
+        timestamps = [start + timedelta(minutes=15 * i) for i in range(24)]  # 6 hours
+        power_values = [200.0] * len(timestamps)
+
+        # Shuffle the data to simulate unsorted input
+        combined = list(zip(timestamps, power_values))
+        random.seed(42)
+        random.shuffle(combined)
+        shuffled_timestamps, shuffled_power = zip(*combined)
+
+        unsorted_data = (
+            pl.DataFrame({"timestamp": list(shuffled_timestamps), "power": list(shuffled_power)})
+            .with_columns(pl.col("timestamp").dt.replace_time_zone("Europe/Brussels"))
+            .lazy()
+        )
+
+        analyzer = BaseloadAnalyzer(timezone="Europe/Brussels", nighttime_only=True)
+        # This would raise "argument in operation 'group_by_dynamic' is not sorted"
+        # if the sort fix is missing
+        result = analyzer.analyze(unsorted_data, "1d")
+
+        assert 195 <= result.global_median_baseload <= 210
