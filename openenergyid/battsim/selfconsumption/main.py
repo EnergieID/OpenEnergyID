@@ -46,7 +46,6 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
 
     def __init__(
         self,
-        data: pd.DataFrame,
         capacity: float,
         power: float,
         initial_charge: float = 0.0,
@@ -64,7 +63,6 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
         """
         super().__init__(**kwargs)
 
-        self.data = data
         self.capacity = capacity
         self.power = power
         self.initial_charge = initial_charge
@@ -85,6 +83,9 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
         ) / (self.capacity * 2)
 
         results[const.ELECTRICITY_CHARGED] = results[const.ELECTRICITY_CHARGED] * -1
+
+        if const.ELECTRICITY_PRODUCED in self.data.columns:
+            results[const.ELECTRICITY_PRODUCED] = self.data[const.ELECTRICITY_PRODUCED]
 
         return results
 

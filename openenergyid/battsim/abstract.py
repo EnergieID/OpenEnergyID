@@ -30,7 +30,8 @@ class BatterySimulator(Simulator, ABC):
     An abstract base class for battery simulators.
     """
 
-    def __init__(self, result_resolution: str = "15min", **kwargs) -> None:
+    def __init__(self, data: pd.DataFrame, result_resolution: str = "15min", **kwargs) -> None:
+        self.data = data
         self._simulation_results: pd.DataFrame | None = None
         self.result_resolution = result_resolution
 
