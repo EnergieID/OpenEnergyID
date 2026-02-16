@@ -30,8 +30,10 @@ async-lru==2.0.5
 attrs==25.3.0
     # via
     #   aiohttp
+    #   cattrs
     #   jsonschema
     #   referencing
+    #   requests-cache
 babel==2.17.0
     # via jupyterlab-server
 beautifulsoup4==4.13.4
@@ -40,6 +42,8 @@ beautifulsoup4==4.13.4
     #   nbconvert
 bleach==6.2.0
     # via nbconvert
+cattrs==25.2.0
+    # via requests-cache
 certifi==2025.4.26
     # via
     #   httpcore
@@ -50,7 +54,9 @@ cffi==1.17.1
     #   argon2-cffi-bindings
     #   pyzmq
 charset-normalizer==3.4.2
-    # via requests
+    # via
+    #   niquests
+    #   requests
 click==8.2.1
     # via deptry
 colorama==0.4.6 ; sys_platform == 'win32'
@@ -80,6 +86,8 @@ executing==2.2.0
     # via stack-data
 fastjsonschema==2.21.1
     # via nbformat
+flatbuffers==25.9.23
+    # via openmeteo-sdk
 fonttools==4.58.1
     # via matplotlib
 fqdn==1.5.1
@@ -89,7 +97,9 @@ frozenlist==1.7.0
     #   aiohttp
     #   aiosignal
 h11==0.16.0
-    # via httpcore
+    # via
+    #   httpcore
+    #   urllib3-future
 h5py==3.14.0
     # via pvlib
 httpcore==1.0.9
@@ -102,6 +112,7 @@ idna==3.10
     #   httpx
     #   jsonschema
     #   requests
+    #   url-normalize
     #   yarl
 iniconfig==2.1.0
     # via pytest
@@ -123,6 +134,8 @@ isoduration==20.11.0
     # via jsonschema
 jedi==0.19.2
     # via ipython
+jh2==5.0.10
+    # via urllib3-future
 jinja2==3.1.6
     # via
     #   altair
@@ -130,6 +143,8 @@ jinja2==3.1.6
     #   jupyterlab
     #   jupyterlab-server
     #   nbconvert
+joblib==1.5.3
+    # via scikit-learn
 json5==0.12.0
     # via jupyterlab-server
 jsonpointer==3.0.0
@@ -224,6 +239,8 @@ nbformat==5.10.4
     #   nbconvert
 nest-asyncio==1.6.0
     # via ipykernel
+niquests==3.17.0
+    # via openmeteo-requests
 notebook==7.4.3
     # via jupyter
 notebook-shim==0.2.4
@@ -239,9 +256,14 @@ numpy==2.2.6
     #   pandas-stubs
     #   patsy
     #   pvlib
+    #   scikit-learn
     #   scipy
     #   seaborn
     #   statsmodels
+openmeteo-requests==1.7.5
+    # via openenergyid
+openmeteo-sdk==1.25.0
+    # via openmeteo-requests
 overrides==7.7.0
     # via jupyter-server
 packaging==25.0
@@ -284,7 +306,9 @@ pillow==11.2.1
     # via matplotlib
 pip==25.1.1
 platformdirs==4.3.8
-    # via jupyter-core
+    # via
+    #   jupyter-core
+    #   requests-cache
 plotly==6.1.2
 pluggy==1.6.0
     # via pytest
@@ -364,6 +388,8 @@ pyzmq==26.4.0
     #   jupyter-client
     #   jupyter-console
     #   jupyter-server
+qh3==1.5.6 ; (python_full_version < '3.12' and platform_machine == 'AMD64' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'ARM64' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'arm64' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'armv7l' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'i686' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'ppc64' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'ppc64le' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'riscv64' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'riscv64gc' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 's390x' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'x86' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'x86_64' and platform_python_implementation == 'PyPy' and sys_platform == 'darwin') or (python_full_version < '3.12' and platform_machine == 'AMD64' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'ARM64' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'arm64' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'armv7l' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'i686' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'ppc64' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'ppc64le' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'riscv64' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'riscv64gc' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 's390x' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'x86' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'x86_64' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'AMD64' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'ARM64' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'arm64' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'armv7l' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'i686' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'ppc64' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'ppc64le' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'riscv64' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'riscv64gc' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 's390x' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86_64' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'ARM64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'armv7l' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'i686' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'ppc64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'ppc64le' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'riscv64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'riscv64gc' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 's390x' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'x86' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'ARM64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'armv7l' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'i686' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'ppc64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'ppc64le' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'riscv64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'riscv64gc' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 's390x' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'ARM64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'armv7l' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'i686' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'ppc64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'ppc64le' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'riscv64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'riscv64gc' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 's390x' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'x86' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'win32')
+    # via urllib3-future
 referencing==0.36.2
     # via
     #   jsonschema
@@ -375,8 +401,14 @@ requests==2.32.3
     #   entsoe-py
     #   jupyterlab-server
     #   pvlib
+    #   requests-cache
+    #   retry-requests
+requests-cache==1.3.0
+    # via openenergyid
 requirements-parser==0.13.0
     # via deptry
+retry-requests==2.0.0
+    # via openenergyid
 rfc3339-validator==0.1.4
     # via
     #   jsonschema
@@ -389,9 +421,12 @@ rpds-py==0.25.1
     # via
     #   jsonschema
     #   referencing
+scikit-learn==1.8.0
+    # via openenergyid
 scipy==1.15.3
     # via
     #   pvlib
+    #   scikit-learn
     #   statsmodels
 seaborn==0.13.2
 send2trash==1.8.3
@@ -415,6 +450,8 @@ terminado==0.18.1
     # via
     #   jupyter-server
     #   jupyter-server-terminals
+threadpoolctl==3.6.0
+    # via scikit-learn
 tinycss2==1.4.0
     # via bleach
 tornado==6.5.1
@@ -455,6 +492,7 @@ typing-extensions==4.14.0
     #   anyio
     #   arro3-core
     #   beautifulsoup4
+    #   cattrs
     #   ipython
     #   pandera
     #   pydantic
@@ -471,10 +509,19 @@ tzdata==2025.2
     # via pandas
 uri-template==1.3.0
     # via jsonschema
+url-normalize==2.2.1
+    # via requests-cache
 urllib3==2.4.0
-    # via requests
+    # via
+    #   requests
+    #   requests-cache
+    #   retry-requests
+urllib3-future==2.15.903
+    # via niquests
 vegafusion==2.0.2
 vl-convert-python==1.8.0
+wassima==2.0.5
+    # via niquests
 wcwidth==0.2.13
     # via prompt-toolkit
 webcolors==24.11.1
