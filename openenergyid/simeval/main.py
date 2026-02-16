@@ -51,6 +51,12 @@ class Evaluator:
             self.data[const.PRICE_ELECTRICITY_DELIVERED] = float("NaN")
         if const.PRICE_ELECTRICITY_EXPORTED not in self.data.columns:
             self.data[const.PRICE_ELECTRICITY_EXPORTED] = float("NaN")
+        if const.BATTERY_CYCLES not in self.data.columns:
+            self.data[const.BATTERY_CYCLES] = float("NaN")
+        if const.ELECTRICITY_CHARGED not in self.data.columns:
+            self.data[const.ELECTRICITY_CHARGED] = float("NaN")
+        if const.ELECTRICITY_DISCHARGED not in self.data.columns:
+            self.data[const.ELECTRICITY_DISCHARGED] = float("NaN")
 
         # Add electricy_consumed
         self.data[const.ELECTRICITY_CONSUMED] = (
@@ -89,6 +95,9 @@ class Evaluator:
                     const.COST_ELECTRICITY_DELIVERED,
                     const.EARNINGS_ELECTRICITY_EXPORTED,
                     const.COST_ELECTRICITY_NET,
+                    const.BATTERY_CYCLES,
+                    const.ELECTRICITY_CHARGED,
+                    const.ELECTRICITY_DISCHARGED,
                 ]
             ]
             .dropna(axis=1, how="all")
@@ -107,6 +116,9 @@ class Evaluator:
                         const.COST_ELECTRICITY_DELIVERED,
                         const.EARNINGS_ELECTRICITY_EXPORTED,
                         const.COST_ELECTRICITY_NET,
+                        const.BATTERY_CYCLES,
+                        const.ELECTRICITY_CHARGED,
+                        const.ELECTRICITY_DISCHARGED,
                     ]
                 ]
                 .dropna(axis=1, how="all")

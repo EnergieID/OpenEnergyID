@@ -166,3 +166,4 @@ figures/
 temp_notebooks/
 *.pkl
 vis/
+data_gitignore/
