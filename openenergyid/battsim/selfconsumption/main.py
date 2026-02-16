@@ -78,9 +78,12 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
             loss=self.loss_factor,
         )
 
-        results[const.BATTERY_CYCLES] = (
-            results[const.ELECTRICITY_CHARGED] + results[const.ELECTRICITY_DISCHARGED]
-        ) / (self.capacity * 2)
+        if self.capacity != 0.0:
+            results[const.BATTERY_CYCLES] = (
+                results[const.ELECTRICITY_CHARGED] + results[const.ELECTRICITY_DISCHARGED]
+            ) / (self.capacity * 2)
+        else:
+            results[const.BATTERY_CYCLES] = 0.0
 
         results[const.ELECTRICITY_CHARGED] = results[const.ELECTRICITY_CHARGED] * -1
 
