@@ -44,7 +44,7 @@ class FullSimulationInput(BaseModel):
     """Full input for running a simulation analysis."""
 
     ex_ante_data: ExAnteData
-    simulation_parameters: SimulationInput
+    simulation_parameters: SimulationInput | list[SimulationInput]
     timezone: str = "Europe/Brussels"
     return_frequencies: list[str] | None = Field(
         default=None,
@@ -61,22 +61,34 @@ async def run_simulation(
 
     ex_ante_eval = evaluate(df, return_frequencies=input_.return_frequencies)
 
-    simulator: Simulator = get_simulator(input_.simulation_parameters, data=df)
-    await simulator.load_resources(session=session)
-
-    sim_eval = evaluate(simulator.result_as_frame(), return_frequencies=input_.return_frequencies)
-
-    if isinstance(simulator, BatterySimulator):
-        df_post = apply_battery_simulation(df, simulator.simulation_results)
+    if not isinstance(input_.simulation_parameters, list):
+        parameters_list = [input_.simulation_parameters]
     else:
-        df_post = apply_pv_simulation(df, simulator.simulation_results)
+        parameters_list = input_.simulation_parameters
+
+    sim_evals = {}
+    for parameters in parameters_list:
+        simulator: Simulator = get_simulator(parameters, data=df)
+        await simulator.load_resources(session=session)
+        sim_eval = evaluate(
+            simulator.result_as_frame(), return_frequencies=input_.return_frequencies
+        )
+        sim_evals[parameters.type] = sim_eval
+
+        if isinstance(simulator, BatterySimulator):
+            df_post = apply_battery_simulation(df, simulator.simulation_results)
+        else:
+            df_post = apply_pv_simulation(df, simulator.simulation_results)
+        df = df_post  # Update df for the next simulation if there are multiple simulations
 
     post_eval = evaluate(df_post, return_frequencies=input_.return_frequencies)
 
     comparison = compare_results(ex_ante_eval, post_eval)
 
     ex_ante_eval_dict = eval_to_dict(ex_ante_eval)
-    sim_eval_dict = eval_to_dict(sim_eval)
+    sim_eval_dict = {key: eval_to_dict(value) for key, value in sim_evals.items()}
+    if len(sim_evals) == 1:
+        sim_eval_dict = sim_eval_dict[next(iter(sim_evals))]
     post_eval_dict = eval_to_dict(post_eval)
     comparison_dict = comparison_to_dict(comparison)
 
