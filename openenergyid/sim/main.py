@@ -66,14 +66,14 @@ async def run_simulation(
     else:
         parameters_list = input_.simulation_parameters
 
-    sim_evals = {}
+    sim_evals = []
     for parameters in parameters_list:
         simulator: Simulator = get_simulator(parameters, data=df)
         await simulator.load_resources(session=session)
         sim_eval = evaluate(
             simulator.result_as_frame(), return_frequencies=input_.return_frequencies
         )
-        sim_evals[parameters.type] = sim_eval
+        sim_evals.append(sim_eval)
 
         if isinstance(simulator, BatterySimulator):
             df_post = apply_battery_simulation(df, simulator.simulation_results)
@@ -86,9 +86,9 @@ async def run_simulation(
     comparison = compare_results(ex_ante_eval, post_eval)
 
     ex_ante_eval_dict = eval_to_dict(ex_ante_eval)
-    sim_eval_dict = {key: eval_to_dict(value) for key, value in sim_evals.items()}
+    sim_eval_dict = [eval_to_dict(value) for value in sim_evals]
     if len(sim_evals) == 1:
-        sim_eval_dict = sim_eval_dict[next(iter(sim_evals))]
+        sim_eval_dict = sim_eval_dict[0]
     post_eval_dict = eval_to_dict(post_eval)
     comparison_dict = comparison_to_dict(comparison)
 

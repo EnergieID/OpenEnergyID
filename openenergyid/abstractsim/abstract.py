@@ -16,7 +16,7 @@ class SimulationSummary(BaseModel):
     """Summary of a simulation including ex-ante, simulation results, ex-post, and comparisons."""
 
     ex_ante: Annotated[dict, Field(description="Ex-ante evaluation results.")]
-    simulation_result: Annotated[dict, Field(description="Simulation results.")]
+    simulation_result: Annotated[dict | list[dict], Field(description="Simulation results.")]
     ex_post: Annotated[dict, Field(description="Ex-post evaluation results.")]
     comparison: Annotated[
         dict, Field(description="Comparison between ex-ante and ex-post results.")
