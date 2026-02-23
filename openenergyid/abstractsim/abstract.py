@@ -56,7 +56,7 @@ class Simulator(ABC):
         return cls(**input_.model_dump(), **kwargs)
 
     @abstractmethod
-    async def load_resources(self, session: ClientSession) -> None:
+    async def load_resources(self, session: ClientSession | None = None) -> None:
         """
         Asynchronously load any required resources using the provided session.
         """

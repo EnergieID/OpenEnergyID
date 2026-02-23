@@ -54,7 +54,7 @@ class FullSimulationInput(BaseModel):
 
 
 async def run_simulation(
-    input_: FullSimulationInput, session: aiohttp.ClientSession
+    input_: FullSimulationInput, session: aiohttp.ClientSession | None = None
 ) -> SimulationSummary:
     """Run the full simulation analysis workflow."""
     df = input_.ex_ante_data.to_pandas(timezone=input_.timezone)
