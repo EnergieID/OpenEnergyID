@@ -79,11 +79,20 @@ class EliaPVSimulator(PVSimulator):
         )
         return pv_load_factors
 
-    async def load_resources(self, session: aiohttp.ClientSession) -> None:
+    async def load_resources(self, session: aiohttp.ClientSession | None = None) -> None:
         """Load resources required for the simulation."""
-        self.load_factors = await self.download_load_factors(
-            start=self.start,
-            end=self.end,
-            region=self.region,
-            session=session,
-        )
+        if session is None:
+            async with aiohttp.ClientSession() as session:
+                self.load_factors = await self.download_load_factors(
+                    start=self.start,
+                    end=self.end,
+                    region=self.region,
+                    session=session,
+                )
+        else:
+            self.load_factors = await self.download_load_factors(
+                start=self.start,
+                end=self.end,
+                region=self.region,
+                session=session,
+            )
