@@ -76,12 +76,11 @@ async def run_simulation(
         sim_evals.append(sim_eval)
 
         if isinstance(simulator, BatterySimulator):
-            df_post = apply_battery_simulation(df, simulator.simulation_results)
+            df = apply_battery_simulation(df, simulator.simulation_results)
         else:
-            df_post = apply_pv_simulation(df, simulator.simulation_results)
-        df = df_post  # Update df for the next simulation if there are multiple simulations
+            df = apply_pv_simulation(df, simulator.simulation_results)
 
-    post_eval = evaluate(df_post, return_frequencies=input_.return_frequencies)
+    post_eval = evaluate(df, return_frequencies=input_.return_frequencies)
 
     comparison = compare_results(ex_ante_eval, post_eval)
 
