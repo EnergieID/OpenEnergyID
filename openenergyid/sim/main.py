@@ -86,7 +86,7 @@ async def run_simulation(
 
     ex_ante_eval_dict = eval_to_dict(ex_ante_eval)
     sim_eval_dict = [eval_to_dict(value) for value in sim_evals]
-    if len(sim_evals) == 1:
+    if len(sim_evals) == 1 and not isinstance(input_.simulation_parameters, list):
         sim_eval_dict = sim_eval_dict[0]
     post_eval_dict = eval_to_dict(post_eval)
     comparison_dict = comparison_to_dict(comparison)
