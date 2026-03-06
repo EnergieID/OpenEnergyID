@@ -9,6 +9,7 @@ class PVLongTermAnalysisInput(BaseModel):
     """Input model for long-term PV evolution analysis."""
 
     frame: TimeDataFrame
+    reference: str | None = None
     timezone: str = Field(
         validation_alias="timeZone",
         serialization_alias="timeZone",
@@ -56,6 +57,7 @@ class PVRegressionDiagnostics(BaseModel):
 class PVLongTermAnalysisOutput(BaseModel):
     """Output model for long-term PV evolution analysis."""
 
+    reference: str | None = None
     yearly_results: list[PVYearResult] = Field(serialization_alias="yearlyResults")
     regression_diagnostics: PVRegressionDiagnostics = Field(
         serialization_alias="regressionDiagnostics"

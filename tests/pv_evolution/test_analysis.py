@@ -99,3 +99,17 @@ def test_reference_period_needs_minimum_12_rows() -> None:
             frame=TimeDataFrame.from_pandas(frame),
             timezone="Europe/Brussels",
         )
+
+
+def test_optional_reference_is_reflected_in_output() -> None:
+    frame = _make_monthly_frame("2021-01-01", periods=12)
+
+    input_model = PVLongTermAnalysisInput(
+        frame=TimeDataFrame.from_pandas(frame),
+        timezone="Europe/Brussels",
+        reference="PV-SITE-123",
+    )
+
+    output = LongTermPVAnalyzer().analyze(input_model)
+
+    assert output.reference == "PV-SITE-123"

@@ -79,6 +79,7 @@ class LongTermPVAnalyzer:
             )
 
         return PVLongTermAnalysisOutput(
+            reference=input_data.reference,
             yearly_results=yearly_results,
             regression_diagnostics=PVRegressionDiagnostics(
                 coefficient=coefficient,
