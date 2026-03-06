@@ -26,7 +26,7 @@ class LongTermPVAnalyzer:
 
     def analyze(self, input_data: PVLongTermAnalysisInput) -> PVLongTermAnalysisOutput:
         """Run the analysis and return typed yearly metrics and diagnostics."""
-        frame = input_data.frame.to_pandas(timezone=input_data.timezone).sort_index()
+        frame = input_data.to_pandas(timezone=input_data.timezone).sort_index()
         year_index = frame.index.map(lambda timestamp: timestamp.year)
 
         reference = self._reference_dataset(frame)

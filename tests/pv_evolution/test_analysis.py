@@ -18,6 +18,21 @@ def _make_monthly_frame(start: str, periods: int, production_factor: float = 2.0
     )
 
 
+def _make_input_model(
+    frame: pd.DataFrame,
+    timezone: str = "Europe/Brussels",
+    reference: str | None = None,
+) -> PVLongTermAnalysisInput:
+    tdf = TimeDataFrame.from_pandas(frame)
+    return PVLongTermAnalysisInput(
+        index=tdf.index,
+        columns=tdf.columns,
+        data=tdf.data,
+        timezone=timezone,
+        reference=reference,
+    )
+
+
 def test_long_term_analysis_happy_path_and_diagnostics() -> None:
     frame = _make_monthly_frame("2021-01-01", periods=36, production_factor=2.0)
 
@@ -27,10 +42,7 @@ def test_long_term_analysis_happy_path_and_diagnostics() -> None:
         frame.loc[year_mask, const.ELECTRICITY_PRODUCED].astype(float) * 1.1
     )
 
-    input_model = PVLongTermAnalysisInput(
-        frame=TimeDataFrame.from_pandas(frame),
-        timezone="Europe/Brussels",
-    )
+    input_model = _make_input_model(frame)
 
     output = LongTermPVAnalyzer().analyze(input_model)
     output_dump = output.model_dump()
@@ -53,10 +65,7 @@ def test_long_term_analysis_happy_path_and_diagnostics() -> None:
 def test_first_incomplete_year_is_skipped() -> None:
     frame = _make_monthly_frame("2021-03-01", periods=34, production_factor=2.0)
 
-    input_model = PVLongTermAnalysisInput(
-        frame=TimeDataFrame.from_pandas(frame),
-        timezone="Europe/Brussels",
-    )
+    input_model = _make_input_model(frame)
 
     output = LongTermPVAnalyzer().analyze(input_model)
 
@@ -68,10 +77,7 @@ def test_first_incomplete_year_is_skipped() -> None:
 def test_incomplete_non_first_year_is_retained() -> None:
     frame = _make_monthly_frame("2021-01-01", periods=27, production_factor=2.0)
 
-    input_model = PVLongTermAnalysisInput(
-        frame=TimeDataFrame.from_pandas(frame),
-        timezone="Europe/Brussels",
-    )
+    input_model = _make_input_model(frame)
 
     output = LongTermPVAnalyzer().analyze(input_model)
 
@@ -86,7 +92,9 @@ def test_missing_required_columns_raises() -> None:
 
     with pytest.raises(ValueError, match="Missing required columns"):
         PVLongTermAnalysisInput(
-            frame=TimeDataFrame.from_pandas(frame),
+            index=TimeDataFrame.from_pandas(frame).index,
+            columns=TimeDataFrame.from_pandas(frame).columns,
+            data=TimeDataFrame.from_pandas(frame).data,
             timezone="Europe/Brussels",
         )
 
@@ -95,20 +103,13 @@ def test_reference_period_needs_minimum_12_rows() -> None:
     frame = _make_monthly_frame("2021-01-01", periods=11)
 
     with pytest.raises(ValueError, match="At least 12 monthly rows"):
-        PVLongTermAnalysisInput(
-            frame=TimeDataFrame.from_pandas(frame),
-            timezone="Europe/Brussels",
-        )
+        _make_input_model(frame)
 
 
 def test_optional_reference_is_reflected_in_output() -> None:
     frame = _make_monthly_frame("2021-01-01", periods=12)
 
-    input_model = PVLongTermAnalysisInput(
-        frame=TimeDataFrame.from_pandas(frame),
-        timezone="Europe/Brussels",
-        reference="PV-SITE-123",
-    )
+    input_model = _make_input_model(frame, reference="PV-SITE-123")
 
     output = LongTermPVAnalyzer().analyze(input_model)
 

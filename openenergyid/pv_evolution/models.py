@@ -5,10 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from openenergyid import TimeDataFrame, const
 
 
-class PVLongTermAnalysisInput(BaseModel):
+class PVLongTermAnalysisInput(TimeDataFrame):
     """Input model for long-term PV evolution analysis."""
 
-    frame: TimeDataFrame
     reference: str | None = None
     timezone: str = Field(
         validation_alias="timeZone",
@@ -21,11 +20,11 @@ class PVLongTermAnalysisInput(BaseModel):
     def validate_frame(self) -> "PVLongTermAnalysisInput":
         """Validate required columns and minimum reference data size."""
         required_columns = {const.SOLAR_RADIATION, const.ELECTRICITY_PRODUCED}
-        missing = required_columns.difference(self.frame.columns)
+        missing = required_columns.difference(self.columns)
         if missing:
             raise ValueError(f"Missing required columns: {sorted(missing)}")
 
-        if len(self.frame.index) < 12:
+        if len(self.index) < 12:
             raise ValueError("At least 12 monthly rows are required for the reference period.")
 
         return self
