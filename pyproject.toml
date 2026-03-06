@@ -28,6 +28,7 @@ dependencies = [
     "pandera[polars]>=0.22.1",
     "pvlib>=0.13.0",
     "pydantic>=2.8.2",
+    "scikit-learn>=1.8.0",
     "statsmodels>=0.14.2",
 ]
 

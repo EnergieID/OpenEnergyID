@@ -24,6 +24,8 @@ idna==3.10
     # via
     #   requests
     #   yarl
+joblib==1.5.3
+    # via scikit-learn
 multidict==6.6.4
     # via
     #   aiohttp
@@ -36,6 +38,7 @@ numpy==2.2.6
     #   pandas
     #   patsy
     #   pvlib
+    #   scikit-learn
     #   scipy
     #   statsmodels
 packaging==25.0
@@ -72,14 +75,19 @@ pytz==2025.2
     #   pvlib
 requests==2.32.3
     # via pvlib
+scikit-learn==1.8.0
+    # via openenergyid
 scipy==1.15.3
     # via
     #   pvlib
+    #   scikit-learn
     #   statsmodels
 six==1.17.0
     # via python-dateutil
 statsmodels==0.14.4
     # via openenergyid
+threadpoolctl==3.6.0
+    # via scikit-learn
 typeguard==4.4.2
     # via pandera
 typing-extensions==4.14.0

@@ -130,6 +130,8 @@ jinja2==3.1.6
     #   jupyterlab
     #   jupyterlab-server
     #   nbconvert
+joblib==1.5.3
+    # via scikit-learn
 json5==0.12.0
     # via jupyterlab-server
 jsonpointer==3.0.0
@@ -239,6 +241,7 @@ numpy==2.2.6
     #   pandas-stubs
     #   patsy
     #   pvlib
+    #   scikit-learn
     #   scipy
     #   seaborn
     #   statsmodels
@@ -389,9 +392,12 @@ rpds-py==0.25.1
     # via
     #   jsonschema
     #   referencing
+scikit-learn==1.8.0
+    # via openenergyid
 scipy==1.15.3
     # via
     #   pvlib
+    #   scikit-learn
     #   statsmodels
 seaborn==0.13.2
 send2trash==1.8.3
@@ -415,6 +421,8 @@ terminado==0.18.1
     # via
     #   jupyter-server
     #   jupyter-server-terminals
+threadpoolctl==3.6.0
+    # via scikit-learn
 tinycss2==1.4.0
     # via bleach
 tornado==6.5.1
