@@ -35,6 +35,9 @@ dependencies = [
 [tool.ruff]
 line-length = 100
 
+[tool.uv]
+default-groups = ["dev"]
+
 [dependency-groups]
 dev = [
     "altair>=5.5.0",
