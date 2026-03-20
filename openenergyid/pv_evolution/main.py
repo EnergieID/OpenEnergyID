@@ -22,12 +22,12 @@ class LongTermPVAnalyzer:
 
     def _reference_dataset(self, frame: pd.DataFrame) -> pd.DataFrame:
         """Return the first 12 rows as regression reference period."""
-        return frame.iloc[:12].copy()
+        return frame.sort_index().iloc[:12].copy()
 
     def analyze(self, input_data: PVLongTermAnalysisInput) -> PVLongTermAnalysisOutput:
         """Run the analysis and return typed yearly metrics and diagnostics."""
         frame = input_data.to_pandas(timezone=input_data.timezone).sort_index()
-        year_index = frame.index.map(lambda timestamp: timestamp.year)
+        year_index = frame.index.year  # type: ignore
 
         reference = self._reference_dataset(frame)
         regression = fit_linear_regression(
@@ -61,7 +61,10 @@ class LongTermPVAnalyzer:
             actual = float(yearly_frame[const.ELECTRICITY_PRODUCED].sum())
             prediction = float(prediction_series.sum())
             error = actual - prediction
-            relative_error = 0.0 if actual == 0 else error / actual
+            if actual == 0:
+                relative_error = 0.0 if prediction == 0 else None
+            else:
+                relative_error = error / actual
 
             yearly_results.append(
                 PVYearResult(

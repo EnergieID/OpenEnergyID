@@ -1,5 +1,6 @@
 """Pydantic models for long-term PV evolution analysis."""
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from openenergyid import TimeDataFrame, const
@@ -18,14 +19,44 @@ class PVLongTermAnalysisInput(TimeDataFrame):
 
     @model_validator(mode="after")
     def validate_frame(self) -> "PVLongTermAnalysisInput":
-        """Validate required columns and minimum reference data size."""
+        """Validate required columns, monthly cadence, and regression-ready values."""
         required_columns = {const.SOLAR_RADIATION, const.ELECTRICITY_PRODUCED}
         missing = required_columns.difference(self.columns)
         if missing:
             raise ValueError(f"Missing required columns: {sorted(missing)}")
 
+        frame = pd.DataFrame(self.data, columns=self.columns, index=self.index).sort_index()
+        required_column_names = sorted(required_columns)
+        if frame.empty:
+            raise ValueError("At least 12 monthly rows are required for the reference period.")
+
+        month_periods = (
+            pd.DatetimeIndex(pd.to_datetime(frame.index, utc=True)).tz_localize(None).to_period("M")
+        )
+
+        if month_periods.has_duplicates:
+            raise ValueError(
+                "Input must contain exactly one row per calendar month; duplicate months "
+                "were found."
+            )
+
+        expected_months = pd.period_range(start=month_periods[0], end=month_periods[-1], freq="M")
+        if not month_periods.equals(expected_months):
+            raise ValueError(
+                "Input must contain contiguous monthly data with no missing calendar months."
+            )
+
         if len(self.index) < 12:
             raise ValueError("At least 12 monthly rows are required for the reference period.")
+
+        missing_mask = frame[required_column_names].isna()  # pylint: disable=unsubscriptable-object
+        if missing_mask.any().any():
+            missing_required_columns = sorted(missing_mask.columns[missing_mask.any()].tolist())
+            invalid_row_count = int(missing_mask.any(axis=1).sum())
+            raise ValueError(
+                "Missing values found in required columns "
+                f"{missing_required_columns} across {invalid_row_count} row(s)."
+            )
 
         return self
 
@@ -37,7 +68,7 @@ class PVYearResult(BaseModel):
     actual_production: float = Field(serialization_alias="actualProduction")
     predicted_production: float = Field(serialization_alias="predictedProduction")
     error: float
-    relative_error: float = Field(serialization_alias="relativeError")
+    relative_error: float | None = Field(serialization_alias="relativeError")
     complete_year: bool = Field(serialization_alias="completeYear")
 
     model_config = ConfigDict(populate_by_name=True)
