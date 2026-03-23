@@ -1,6 +1,12 @@
 {
   "name": "Python 3",
   "image": "mcr.microsoft.com/devcontainers/python:1.1.9-3.11-bookworm",
+  "runArgs": [
+    "--security-opt",
+    "seccomp=unconfined",
+    "--security-opt",
+    "apparmor=unconfined"
+  ],
   "features": {},
   "postCreateCommand": "zsh -l .devcontainer/post-install.sh",
   // "postStartCommand": "",
