@@ -32,3 +32,7 @@ COST_ELECTRICITY_NET: Literal["cost_electricity_net"] = "cost_electricity_net"
 
 RATIO_SELF_CONSUMPTION: Literal["ratio_self_consumption"] = "ratio_self_consumption"
 RATIO_SELF_SUFFICIENCY: Literal["ratio_self_sufficiency"] = "ratio_self_sufficiency"
+
+# Weather
+
+SOLAR_RADIATION: Literal["solar_radiation"] = "solar_radiation"

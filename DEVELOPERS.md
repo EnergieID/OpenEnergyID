@@ -12,6 +12,13 @@ we use [pre-commit ](https://pre-commit.com/)to run RUFF.
 
 We use [uv](https://github.com/astral-sh/uv) as our primary tool for packaging and managing dependencies. uv is an extremely fast Python package installer and resolver, written in Rust.
 
+Minimum supported uv version: `0.9.0`.
+Check your installed version with:
+
+```shell
+uv --version
+```
+
 For the most detailed and up-to-date information, please refer to the [official uv documentation](https://astral.sh/guide/uv).
 
 ## Setup with uv
@@ -23,6 +30,8 @@ For the most detailed and up-to-date information, please refer to the [official 
 uv venv
 uv sync
 ```
+
+`uv sync` includes the `dev` dependency group by default in this repository via `tool.uv.default-groups`.
 
 ## Remarks for devcontainer
 
