@@ -33,7 +33,7 @@ class PVLibSimulationInput(PVSimulationInputAbstract):
     """
 
     type: Literal["pvlibsimulation"] = Field("pvlibsimulation", frozen=True)  # tag
-    timeout: int = Field(30, gt=0, description="PVGIS request timeout in seconds per attempt")
+    timeout: int = Field(60, gt=0, description="PVGIS request timeout in seconds per attempt")
     retry_count: int = Field(
         2, ge=0, description="Number of PVGIS retries after the initial transient failure"
     )
