@@ -7,11 +7,96 @@ including timezone-aware handling and leap year adjustments.
 
 import asyncio
 import datetime as dt
+import threading
+import time
 import typing
+from collections import OrderedDict
+from dataclasses import dataclass
 
 import pandas as pd
 import pvlib
 import requests
+
+WeatherCacheKey = tuple[float, float, str]
+_WEATHER_CACHE_MAX_SIZE = 256
+
+
+@dataclass
+class _InFlightWeatherRequest:
+    condition: threading.Condition
+    ready: bool = False
+    value: pd.DataFrame | None = None
+    error: Exception | None = None
+
+
+class _NormalYearWeatherCache:
+    """Thread-safe LRU cache with single-flight loading per weather key."""
+
+    def __init__(self, max_size: int = _WEATHER_CACHE_MAX_SIZE) -> None:
+        self._max_size = max_size
+        self._cache: OrderedDict[WeatherCacheKey, pd.DataFrame] = OrderedDict()
+        self._in_flight: dict[WeatherCacheKey, _InFlightWeatherRequest] = {}
+        self._lock = threading.Lock()
+
+    def clear(self) -> None:
+        """Remove all completed cache entries."""
+        with self._lock:
+            self._cache.clear()
+
+    def get_or_load(
+        self, key: WeatherCacheKey, loader: typing.Callable[[], pd.DataFrame]
+    ) -> pd.DataFrame:
+        creator = False
+
+        with self._lock:
+            cached = self._cache.get(key)
+            if cached is not None:
+                self._cache.move_to_end(key)
+                return cached
+
+            entry = self._in_flight.get(key)
+            if entry is None:
+                entry = _InFlightWeatherRequest(condition=threading.Condition(self._lock))
+                self._in_flight[key] = entry
+                creator = True
+            else:
+                while not entry.ready:
+                    entry.condition.wait()
+
+                if entry.error is not None:
+                    raise entry.error
+                if entry.value is None:
+                    raise RuntimeError("Weather cache load completed without a value.")
+                return entry.value
+
+        if not creator:
+            raise RuntimeError("Unreachable cache loading state.")
+
+        try:
+            value = loader()
+        except Exception as exc:
+            with self._lock:
+                entry.error = exc
+                entry.ready = True
+                self._in_flight.pop(key, None)
+                entry.condition.notify_all()
+            raise
+
+        with self._lock:
+            self._cache[key] = value
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+
+            entry.value = value
+            entry.ready = True
+            self._in_flight.pop(key, None)
+            entry.condition.notify_all()
+
+        return value
+
+
+_NORMAL_YEAR_WEATHER_CACHE = _NormalYearWeatherCache()
 
 
 def get_utc_offset_on_1_jan(timezone: str) -> int:
@@ -34,11 +119,14 @@ def get_utc_offset_on_1_jan(timezone: str) -> int:
     return int(utc_offset.total_seconds() / 3600)
 
 
-def _get_weather_sync(
+def clear_weather_cache() -> None:
+    """Clear the process-local PVGIS normal-year weather cache."""
+    _NORMAL_YEAR_WEATHER_CACHE.clear()
+
+
+def _download_normal_year_weather_sync(
     latitude: float,
     longitude: float,
-    start: dt.date,
-    end: dt.date,
     tz: str,
     timeout: int,
 ) -> pd.DataFrame:
@@ -51,13 +139,11 @@ def _get_weather_sync(
     Args:
         latitude: Latitude of the location.
         longitude: Longitude of the location.
-        start: Start date (inclusive).
-        end: End date (exclusive).
         tz: Timezone string.
         timeout: PVGIS request timeout in seconds.
 
     Returns:
-        A pandas DataFrame indexed by timestamp with weather data.
+        A pandas DataFrame indexed by timestamp with normal-year weather data.
     """
     # Get a "normal year" from pvgis, it will be indexed in 1990
     utc_offset = get_utc_offset_on_1_jan(tz)
@@ -70,6 +156,25 @@ def _get_weather_sync(
     weather = typing.cast(pd.DataFrame, weather)
     weather = weather.tz_convert(tz)
     weather.index.name = None
+    return weather
+
+
+def _materialize_weather_for_range_sync(
+    normal_year_weather: pd.DataFrame, start: dt.date, end: dt.date, tz: str
+) -> pd.DataFrame:
+    """
+    Align cached normal-year weather to the requested date range.
+
+    Args:
+        normal_year_weather: Cached normal-year weather for the site.
+        start: Start date (inclusive).
+        end: End date (exclusive).
+        tz: Timezone string.
+
+    Returns:
+        A pandas DataFrame indexed by timestamp with weather data.
+    """
+    weather = normal_year_weather.copy()
 
     # Check if 29 februari is included in the weather data
     weather_index = typing.cast(pd.DatetimeIndex, weather.index)
@@ -102,6 +207,85 @@ def _get_weather_sync(
     return df
 
 
+def _load_normal_year_weather_with_retry_sync(
+    latitude: float,
+    longitude: float,
+    tz: str,
+    timeout: int,
+    retry_count: int,
+    retry_backoff_seconds: float,
+) -> pd.DataFrame:
+    """Download normal-year weather with retry logic for transient failures."""
+    transient_exceptions = (requests.Timeout, requests.ConnectionError)
+
+    for attempt in range(retry_count + 1):
+        try:
+            return _download_normal_year_weather_sync(
+                latitude=latitude,
+                longitude=longitude,
+                tz=tz,
+                timeout=timeout,
+            )
+        except transient_exceptions:
+            if attempt == retry_count:
+                raise
+
+            delay = retry_backoff_seconds * (2**attempt)
+            time.sleep(delay)
+
+    raise RuntimeError("Unreachable retry loop state")
+
+
+def _get_cached_normal_year_weather_sync(
+    latitude: float,
+    longitude: float,
+    tz: str,
+    timeout: int,
+    retry_count: int,
+    retry_backoff_seconds: float,
+) -> pd.DataFrame:
+    """Load normal-year weather from the shared cache or fetch on cache miss."""
+    key: WeatherCacheKey = (latitude, longitude, tz)
+    return _NORMAL_YEAR_WEATHER_CACHE.get_or_load(
+        key,
+        lambda: _load_normal_year_weather_with_retry_sync(
+            latitude=latitude,
+            longitude=longitude,
+            tz=tz,
+            timeout=timeout,
+            retry_count=retry_count,
+            retry_backoff_seconds=retry_backoff_seconds,
+        ),
+    )
+
+
+def _get_weather_sync(
+    latitude: float,
+    longitude: float,
+    start: dt.date,
+    end: dt.date,
+    tz: str,
+    timeout: int,
+    retry_count: int,
+    retry_backoff_seconds: float,
+) -> pd.DataFrame:
+    """Load request-specific weather using cached normal-year weather when available."""
+    normal_year_weather = _get_cached_normal_year_weather_sync(
+        latitude=latitude,
+        longitude=longitude,
+        tz=tz,
+        timeout=timeout,
+        retry_count=retry_count,
+        retry_backoff_seconds=retry_backoff_seconds,
+    )
+    return _materialize_weather_for_range_sync(
+        normal_year_weather=normal_year_weather,
+        start=start,
+        end=end,
+        tz=tz,
+    )
+
+
 async def get_weather(
     latitude: float,
     longitude: float,
@@ -113,7 +297,7 @@ async def get_weather(
     retry_backoff_seconds: float = 1.0,
 ) -> pd.DataFrame:
     """
-    Retrieve weather data asynchronously with retry logic for transient failures.
+    Retrieve weather data asynchronously using shared cached normal-year weather.
 
     Args:
         latitude: Latitude of the location.
@@ -128,24 +312,14 @@ async def get_weather(
     Returns:
         A pandas DataFrame indexed by timestamp with weather data.
     """
-    transient_exceptions = (requests.Timeout, requests.ConnectionError)
-
-    for attempt in range(retry_count + 1):
-        try:
-            return await asyncio.to_thread(
-                _get_weather_sync,
-                latitude,
-                longitude,
-                start,
-                end,
-                tz,
-                timeout,
-            )
-        except transient_exceptions:
-            if attempt == retry_count:
-                raise
-
-            delay = retry_backoff_seconds * (2**attempt)
-            await asyncio.sleep(delay)
-
-    raise RuntimeError("Unreachable retry loop state")
+    return await asyncio.to_thread(
+        _get_weather_sync,
+        latitude,
+        longitude,
+        start,
+        end,
+        tz,
+        timeout,
+        retry_count,
+        retry_backoff_seconds,
+    )

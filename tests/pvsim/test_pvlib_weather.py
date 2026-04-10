@@ -1,5 +1,8 @@
 import asyncio
 import datetime as dt
+import threading
+import time
+import typing
 from types import SimpleNamespace
 
 import pandas as pd
@@ -48,6 +51,17 @@ def _make_weather_frame() -> pd.DataFrame:
         },
         index=index,
     )
+
+
+async def _awaitable(value):
+    return value
+
+
+@pytest.fixture(autouse=True)
+def clear_weather_cache() -> typing.Iterator[None]:
+    weather_module.clear_weather_cache()
+    yield
+    weather_module.clear_weather_cache()
 
 
 def _make_dummy_modelchain(tz: str = "UTC") -> SimpleNamespace:
@@ -151,12 +165,14 @@ def test_get_weather_uses_to_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     assert to_thread_calls == [
         (
             fake_get_weather_sync,
-            (51.2, 4.4, dt.date(2024, 1, 1), dt.date(2024, 1, 2), "UTC", 7),
+            (51.2, 4.4, dt.date(2024, 1, 1), dt.date(2024, 1, 2), "UTC", 7, 2, 1.0),
         )
     ]
 
 
-def test_get_weather_sync_forwards_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_download_normal_year_weather_sync_forwards_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[dict[str, object]] = []
     weather_frame = _make_weather_frame()
 
@@ -166,16 +182,14 @@ def test_get_weather_sync_forwards_timeout(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(weather_module.pvlib.iotools, "get_pvgis_tmy", fake_get_pvgis_tmy)
 
-    result = weather_module._get_weather_sync(
+    result = weather_module._download_normal_year_weather_sync(
         latitude=51.2,
         longitude=4.4,
-        start=dt.date(2024, 1, 1),
-        end=dt.date(2024, 1, 2),
         tz="UTC",
         timeout=17,
     )
 
-    assert len(result) == 96
+    assert result.equals(weather_frame)
     assert calls == [
         {
             "latitude": 51.2,
@@ -186,80 +200,252 @@ def test_get_weather_sync_forwards_timeout(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
 
-def test_get_weather_retries_transient_failures_until_success(
+def test_same_site_reuses_cached_normal_year_across_simulator_instances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = {"count": 0}
+    normal_year_weather = _make_weather_frame()
+
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
+        attempts["count"] += 1
+        return normal_year_weather
+
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+    monkeypatch.setattr(
+        weather_module.asyncio, "to_thread", lambda func, *args: _awaitable(func(*args))
+    )
+
+    simulator_one = PVLibSimulator(
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        modelchain=_make_dummy_modelchain(),
+    )
+    simulator_two = PVLibSimulator(
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        modelchain=_make_dummy_modelchain(),
+    )
+
+    asyncio.run(simulator_one.load_resources())
+    asyncio.run(simulator_two.load_resources())
+
+    assert attempts["count"] == 1
+    assert simulator_one.weather is not None
+    assert simulator_two.weather is not None
+    assert simulator_one.weather.equals(simulator_two.weather)
+
+
+def test_different_date_ranges_reuse_cached_normal_year(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = {"count": 0}
+    normal_year_weather = _make_weather_frame()
+
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
+        attempts["count"] += 1
+        return normal_year_weather
+
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+
+    first = weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=30,
+        retry_count=2,
+        retry_backoff_seconds=1.0,
+    )
+    second = weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 2),
+        end=dt.date(2024, 1, 3),
+        tz="UTC",
+        timeout=30,
+        retry_count=2,
+        retry_backoff_seconds=1.0,
+    )
+
+    assert attempts["count"] == 1
+    assert len(first) == 96
+    assert len(second) == 96
+    assert first.index[0] == pd.Timestamp("2024-01-01 00:00:00+0000", tz="UTC")
+    assert second.index[0] == pd.Timestamp("2024-01-02 00:00:00+0000", tz="UTC")
+
+
+def test_different_location_or_timezone_uses_separate_cache_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = {"count": 0}
+    normal_year_weather = _make_weather_frame()
+
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
+        attempts["count"] += 1
+        return normal_year_weather
+
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+
+    weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=30,
+        retry_count=2,
+        retry_backoff_seconds=1.0,
+    )
+    weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="Europe/Brussels",
+        timeout=30,
+        retry_count=2,
+        retry_backoff_seconds=1.0,
+    )
+    weather_module._get_weather_sync(
+        latitude=51.3,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=30,
+        retry_count=2,
+        retry_backoff_seconds=1.0,
+    )
+
+    assert attempts["count"] == 3
+
+
+def test_cached_hit_ignores_later_transport_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = {"count": 0}
+    normal_year_weather = _make_weather_frame()
+
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
+        attempts["count"] += 1
+        return normal_year_weather
+
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+
+    weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=10,
+        retry_count=0,
+        retry_backoff_seconds=0.1,
+    )
+    weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 2, 1),
+        end=dt.date(2024, 2, 2),
+        tz="UTC",
+        timeout=90,
+        retry_count=5,
+        retry_backoff_seconds=5.0,
+    )
+
+    assert attempts["count"] == 1
+
+
+def test_get_weather_retries_transient_failures_until_success_on_cold_miss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     attempts = {"count": 0}
     sleep_calls: list[float] = []
-    expected = pd.DataFrame({"ghi": [1.0]}, index=pd.date_range("2024-01-01", periods=1, tz="UTC"))
+    normal_year_weather = _make_weather_frame()
 
-    def fake_get_weather_sync(*args, **kwargs):
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
         attempts["count"] += 1
         if attempts["count"] < 3:
             raise requests.Timeout("temporary timeout")
-        return expected
+        return normal_year_weather
 
-    async def fake_to_thread(func, *args):
-        return func(*args)
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+    monkeypatch.setattr(weather_module.time, "sleep", sleep_calls.append)
 
-    async def fake_sleep(delay: float):
-        sleep_calls.append(delay)
+    result = weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=7,
+        retry_count=2,
+        retry_backoff_seconds=0.5,
+    )
 
-    monkeypatch.setattr(weather_module, "_get_weather_sync", fake_get_weather_sync)
-    monkeypatch.setattr(weather_module.asyncio, "to_thread", fake_to_thread)
-    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    assert len(result) == 96
+    assert attempts["count"] == 3
+    assert sleep_calls == [0.5, 1.0]
 
-    result = asyncio.run(
-        weather_module.get_weather(
+
+def test_failed_download_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = {"count": 0}
+    normal_year_weather = _make_weather_frame()
+
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise requests.ConnectionError("network down")
+        return normal_year_weather
+
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+
+    with pytest.raises(requests.ConnectionError, match="network down"):
+        weather_module._get_weather_sync(
             latitude=51.2,
             longitude=4.4,
             start=dt.date(2024, 1, 1),
             end=dt.date(2024, 1, 2),
             tz="UTC",
-            timeout=7,
-            retry_count=2,
-            retry_backoff_seconds=0.5,
+            timeout=30,
+            retry_count=0,
+            retry_backoff_seconds=1.0,
         )
+
+    result = weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=30,
+        retry_count=0,
+        retry_backoff_seconds=1.0,
     )
 
-    assert result is expected
-    assert attempts["count"] == 3
-    assert sleep_calls == [0.5, 1.0]
-
-
-def test_get_weather_raises_after_retry_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    attempts = {"count": 0}
-    sleep_calls: list[float] = []
-
-    def fake_get_weather_sync(*args, **kwargs):
-        attempts["count"] += 1
-        raise requests.ConnectionError("network down")
-
-    async def fake_to_thread(func, *args):
-        return func(*args)
-
-    async def fake_sleep(delay: float):
-        sleep_calls.append(delay)
-
-    monkeypatch.setattr(weather_module, "_get_weather_sync", fake_get_weather_sync)
-    monkeypatch.setattr(weather_module.asyncio, "to_thread", fake_to_thread)
-    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
-
-    with pytest.raises(requests.ConnectionError, match="network down"):
-        asyncio.run(
-            weather_module.get_weather(
-                latitude=51.2,
-                longitude=4.4,
-                start=dt.date(2024, 1, 1),
-                end=dt.date(2024, 1, 2),
-                tz="UTC",
-                retry_count=2,
-                retry_backoff_seconds=0.25,
-            )
-        )
-
-    assert attempts["count"] == 3
-    assert sleep_calls == [0.25, 0.5]
+    assert attempts["count"] == 2
+    assert len(result) == 96
 
 
 def test_get_weather_does_not_retry_non_retryable_errors(
@@ -268,32 +454,123 @@ def test_get_weather_does_not_retry_non_retryable_errors(
     attempts = {"count": 0}
     sleep_calls: list[float] = []
 
-    def fake_get_weather_sync(*args, **kwargs):
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
         attempts["count"] += 1
         raise requests.HTTPError("bad request")
 
-    async def fake_to_thread(func, *args):
-        return func(*args)
-
-    async def fake_sleep(delay: float):
-        sleep_calls.append(delay)
-
-    monkeypatch.setattr(weather_module, "_get_weather_sync", fake_get_weather_sync)
-    monkeypatch.setattr(weather_module.asyncio, "to_thread", fake_to_thread)
-    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+    monkeypatch.setattr(weather_module.time, "sleep", sleep_calls.append)
 
     with pytest.raises(requests.HTTPError, match="bad request"):
-        asyncio.run(
-            weather_module.get_weather(
-                latitude=51.2,
-                longitude=4.4,
-                start=dt.date(2024, 1, 1),
-                end=dt.date(2024, 1, 2),
-                tz="UTC",
-                retry_count=2,
-                retry_backoff_seconds=0.25,
-            )
+        weather_module._get_weather_sync(
+            latitude=51.2,
+            longitude=4.4,
+            start=dt.date(2024, 1, 1),
+            end=dt.date(2024, 1, 2),
+            tz="UTC",
+            retry_count=2,
+            retry_backoff_seconds=0.25,
+            timeout=30,
         )
 
     assert attempts["count"] == 1
     assert sleep_calls == []
+
+
+def test_parallel_same_key_cold_misses_share_one_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = {"count": 0}
+    normal_year_weather = _make_weather_frame()
+    started = threading.Event()
+    release = threading.Event()
+    results: list[pd.DataFrame] = []
+
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
+        attempts["count"] += 1
+        started.set()
+        if not release.wait(timeout=1):
+            raise TimeoutError("parallel test did not release in time")
+        return normal_year_weather
+
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+
+    def run_request() -> None:
+        result = weather_module._get_weather_sync(
+            latitude=51.2,
+            longitude=4.4,
+            start=dt.date(2024, 1, 1),
+            end=dt.date(2024, 1, 2),
+            tz="UTC",
+            timeout=30,
+            retry_count=2,
+            retry_backoff_seconds=1.0,
+        )
+        results.append(result)
+
+    thread_one = threading.Thread(target=run_request)
+    thread_two = threading.Thread(target=run_request)
+    thread_one.start()
+
+    try:
+        assert started.wait(timeout=1)
+
+        thread_two.start()
+        time.sleep(0.05)
+    finally:
+        release.set()
+        thread_one.join(timeout=1)
+        thread_two.join(timeout=1)
+
+    assert attempts["count"] == 1
+    assert not thread_one.is_alive()
+    assert not thread_two.is_alive()
+    assert len(results) == 2
+    assert results[0].equals(results[1])
+
+
+def test_clear_weather_cache_forces_refetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = {"count": 0}
+    normal_year_weather = _make_weather_frame()
+
+    def fake_download_normal_year_weather_sync(*args, **kwargs):
+        attempts["count"] += 1
+        return normal_year_weather
+
+    monkeypatch.setattr(
+        weather_module,
+        "_download_normal_year_weather_sync",
+        fake_download_normal_year_weather_sync,
+    )
+
+    weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=30,
+        retry_count=2,
+        retry_backoff_seconds=1.0,
+    )
+    weather_module.clear_weather_cache()
+    weather_module._get_weather_sync(
+        latitude=51.2,
+        longitude=4.4,
+        start=dt.date(2024, 1, 1),
+        end=dt.date(2024, 1, 2),
+        tz="UTC",
+        timeout=30,
+        retry_count=2,
+        retry_backoff_seconds=1.0,
+    )
+
+    assert attempts["count"] == 2
