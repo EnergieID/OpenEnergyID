@@ -20,12 +20,15 @@ class BaseloadAnalysisResult:
     results : pl.LazyFrame
         Per-period metrics (hourly, daily, monthly, etc.) with columns:
         - timestamp: Start of reporting period
-        - consumption_due_to_baseload_in_kilowatthour
+        - consumption_due_to_baseload_in_kilowatthour (null when baseload is not
+          computable for the period)
         - total_consumption_in_kilowatthour
-        - consumption_not_due_to_baseload_in_kilowatthour
-        - average_daily_baseload_in_watt
+        - consumption_not_due_to_baseload_in_kilowatthour (null when baseload is not
+          computable for the period)
+        - average_daily_baseload_in_watt (null when baseload is not computable for
+          the period)
         - average_power_in_watt
-        - baseload_ratio
+        - baseload_ratio (null when baseload is not computable for the period)
         - consumption_due_to_median_baseload_in_kilowatthour
 
     global_median_baseload : float
@@ -198,7 +201,9 @@ class BaseloadAnalyzer:
         -------
         BaseloadAnalysisResult
             A dataclass containing:
-            - results: pl.LazyFrame with metrics per reporting period
+            - results: pl.LazyFrame with metrics per reporting period. Baseload-derived
+              local metrics may be null when no daily baseload can be computed inside
+              that reporting period.
             - global_median_baseload: The overall median baseload in watts
             - monthly_median_baseloads: pl.LazyFrame with monthly median baseload values
         """
@@ -218,7 +223,7 @@ class BaseloadAnalyzer:
         if row_count == 0:
             return self._empty_result()
 
-        daily_baseload = (
+        daily_baseload_all_days = (
             power_lf.group_by_dynamic("timestamp", every="1d")
             .agg(
                 pl.col("power")
@@ -226,63 +231,95 @@ class BaseloadAnalyzer:
                 .quantile(self.quantile)
                 .alias("daily_baseload")
             )
-            .filter(pl.col("daily_baseload").is_not_null())
+            .rename({"timestamp": "baseload_day"})
+        )
+        daily_baseload_defined = daily_baseload_all_days.filter(
+            pl.col("daily_baseload").is_not_null()
         )
 
-        baseload_count = daily_baseload.select(pl.len()).collect().item()
+        baseload_count = daily_baseload_defined.select(pl.len()).collect().item()
         if baseload_count == 0:
             return self._empty_result()
 
         global_median_baseload = (
-            daily_baseload.select(pl.col("daily_baseload").median()).collect().item()
+            daily_baseload_defined.select(pl.col("daily_baseload").median()).collect().item()
         ) or 0.0
 
         # Compute monthly median baseloads from daily values
-        monthly_median_baseloads = daily_baseload.group_by_dynamic("timestamp", every="1mo").agg(
-            pl.col("daily_baseload").median().alias("monthly_median_baseload_in_watt")
+        monthly_median_baseloads = (
+            daily_baseload_defined.rename({"baseload_day": "timestamp"})
+            .group_by_dynamic("timestamp", every="1mo")
+            .agg(pl.col("daily_baseload").median().alias("monthly_median_baseload_in_watt"))
         )
 
         results = (
-            power_lf.join_asof(daily_baseload, on="timestamp")
+            power_lf.with_columns(pl.col("timestamp").dt.truncate("1d").alias("baseload_day"))
+            .join(daily_baseload_all_days, on="baseload_day", how="left")
             .group_by_dynamic("timestamp", every=reporting_granularity)
             .agg(
                 [
+                    pl.col("daily_baseload")
+                    .is_not_null()
+                    .sum()
+                    .alias("computable_baseload_point_count"),
                     (pl.col("daily_baseload").fill_null(0).sum() * 0.25 / 1000).alias(
-                        "consumption_due_to_baseload_in_kilowatthour"
+                        "_raw_consumption_due_to_baseload_in_kilowatthour"
                     ),
                     (pl.col("power").sum() * 0.25 / 1000).alias(
                         "total_consumption_in_kilowatthour"
                     ),
-                    pl.col("daily_baseload").mean().alias("average_daily_baseload_in_watt"),
+                    pl.col("daily_baseload").mean().alias("_raw_average_daily_baseload_in_watt"),
                     pl.col("power").mean().alias("average_power_in_watt"),
                     (pl.len() * 0.25 * global_median_baseload / 1000).alias(
                         "consumption_due_to_median_baseload_in_kilowatthour"
                     ),
                 ]
             )
-            # First: cap baseload to not exceed total consumption
-            .with_columns(
-                pl.min_horizontal(
-                    pl.col("consumption_due_to_baseload_in_kilowatthour"),
-                    pl.col("total_consumption_in_kilowatthour"),
-                ).alias("consumption_due_to_baseload_in_kilowatthour")
-            )
-            # Second: calculate derived columns using the capped baseload
             .with_columns(
                 [
-                    (
-                        pl.col("total_consumption_in_kilowatthour")
-                        - pl.col("consumption_due_to_baseload_in_kilowatthour")
+                    pl.when(pl.col("computable_baseload_point_count") > 0)
+                    .then(
+                        pl.min_horizontal(
+                            pl.col("_raw_consumption_due_to_baseload_in_kilowatthour"),
+                            pl.col("total_consumption_in_kilowatthour"),
+                        )
                     )
-                    .clip(lower_bound=0)
+                    .otherwise(None)
+                    .alias("consumption_due_to_baseload_in_kilowatthour"),
+                    pl.when(pl.col("computable_baseload_point_count") > 0)
+                    .then(pl.col("_raw_average_daily_baseload_in_watt"))
+                    .otherwise(None)
+                    .alias("average_daily_baseload_in_watt"),
+                ]
+            )
+            .with_columns(
+                [
+                    pl.when(pl.col("computable_baseload_point_count") > 0)
+                    .then(
+                        (
+                            pl.col("total_consumption_in_kilowatthour")
+                            - pl.col("consumption_due_to_baseload_in_kilowatthour")
+                        ).clip(lower_bound=0)
+                    )
+                    .otherwise(None)
                     .alias("consumption_not_due_to_baseload_in_kilowatthour"),
-                    pl.when(pl.col("total_consumption_in_kilowatthour") > 0)
+                    pl.when(
+                        (pl.col("computable_baseload_point_count") > 0)
+                        & (pl.col("total_consumption_in_kilowatthour") > 0)
+                    )
                     .then(
                         pl.col("consumption_due_to_baseload_in_kilowatthour")
                         / pl.col("total_consumption_in_kilowatthour")
                     )
                     .otherwise(None)
                     .alias("baseload_ratio"),
+                ]
+            )
+            .drop(
+                [
+                    "computable_baseload_point_count",
+                    "_raw_consumption_due_to_baseload_in_kilowatthour",
+                    "_raw_average_daily_baseload_in_watt",
                 ]
             )
         )
