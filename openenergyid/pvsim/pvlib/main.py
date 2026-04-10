@@ -54,7 +54,7 @@ class PVLibSimulator(PVSimulator):
         end: dt.date,
         modelchain: pvlib.modelchain.ModelChain,
         weather: pd.DataFrame | None = None,
-        timeout: int = 30,
+        timeout: int = 60,
         retry_count: int = 2,
         retry_backoff_seconds: float = 1.0,
         **kwargs,
