@@ -302,12 +302,16 @@ def summarize_result(df: pd.DataFrame) -> pd.Series:
     summary = df.filter(like="cost").sum()
 
     abs_smr2 = summary.filter(like="smr2").abs().sum()
+    total_smr2 = summary.filter(like="smr2").sum()
+    total_smr3 = summary.filter(like="smr3").sum()
 
-    summary["cost_electricity_total_smr2"] = summary.filter(like="smr2").sum()
-    summary["cost_electricity_total_smr3"] = summary.filter(like="smr3").sum()
+    summary["cost_electricity_total_smr2"] = total_smr2
+    summary["cost_electricity_total_smr3"] = total_smr3
 
-    summary["ratio"] = (
-        summary["cost_electricity_total_smr3"] - summary["cost_electricity_total_smr2"]
-    ) / abs_smr2
+    if abs_smr2 == 0:
+        summary = summary.astype(object)
+        summary["ratio"] = None
+    else:
+        summary["ratio"] = (total_smr3 - total_smr2) / abs_smr2
 
     return summary
