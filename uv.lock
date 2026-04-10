@@ -1612,6 +1612,7 @@ dependencies = [
     { name = "pandera", extra = ["polars"] },
     { name = "pvlib" },
     { name = "pydantic" },
+    { name = "requests" },
     { name = "scikit-learn" },
     { name = "statsmodels" },
 ]
@@ -1646,6 +1647,7 @@ requires-dist = [
     { name = "pandera", extras = ["polars"], specifier = ">=0.22.1" },
     { name = "pvlib", specifier = ">=0.13.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
+    { name = "requests", specifier = ">=2.32.3" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "statsmodels", specifier = ">=0.14.2" },
 ]

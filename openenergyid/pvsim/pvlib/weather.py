@@ -5,11 +5,13 @@ Provides functions to retrieve and process weather data for PV simulations,
 including timezone-aware handling and leap year adjustments.
 """
 
+import asyncio
 import datetime as dt
 import typing
 
 import pandas as pd
 import pvlib
+import requests
 
 
 def get_utc_offset_on_1_jan(timezone: str) -> int:
@@ -32,8 +34,13 @@ def get_utc_offset_on_1_jan(timezone: str) -> int:
     return int(utc_offset.total_seconds() / 3600)
 
 
-def get_weather(
-    latitude: float, longitude: float, start: dt.date, end: dt.date, tz: str
+def _get_weather_sync(
+    latitude: float,
+    longitude: float,
+    start: dt.date,
+    end: dt.date,
+    tz: str,
+    timeout: int,
 ) -> pd.DataFrame:
     """
     Retrieve and process weather data for the specified location and date range.
@@ -47,6 +54,7 @@ def get_weather(
         start: Start date (inclusive).
         end: End date (exclusive).
         tz: Timezone string.
+        timeout: PVGIS request timeout in seconds.
 
     Returns:
         A pandas DataFrame indexed by timestamp with weather data.
@@ -54,7 +62,10 @@ def get_weather(
     # Get a "normal year" from pvgis, it will be indexed in 1990
     utc_offset = get_utc_offset_on_1_jan(tz)
     weather = pvlib.iotools.get_pvgis_tmy(
-        latitude=latitude, longitude=longitude, roll_utc_offset=utc_offset
+        latitude=latitude,
+        longitude=longitude,
+        timeout=timeout,
+        roll_utc_offset=utc_offset,
     )[0]
     weather = typing.cast(pd.DataFrame, weather)
     weather = weather.tz_convert(tz)
@@ -89,3 +100,52 @@ def get_weather(
     df = df.iloc[:-1]
 
     return df
+
+
+async def get_weather(
+    latitude: float,
+    longitude: float,
+    start: dt.date,
+    end: dt.date,
+    tz: str,
+    timeout: int = 30,
+    retry_count: int = 2,
+    retry_backoff_seconds: float = 1.0,
+) -> pd.DataFrame:
+    """
+    Retrieve weather data asynchronously with retry logic for transient failures.
+
+    Args:
+        latitude: Latitude of the location.
+        longitude: Longitude of the location.
+        start: Start date (inclusive).
+        end: End date (exclusive).
+        tz: Timezone string.
+        timeout: PVGIS request timeout in seconds per attempt.
+        retry_count: Number of retries after the initial failed attempt.
+        retry_backoff_seconds: Base delay in seconds for exponential retry backoff.
+
+    Returns:
+        A pandas DataFrame indexed by timestamp with weather data.
+    """
+    transient_exceptions = (requests.Timeout, requests.ConnectionError)
+
+    for attempt in range(retry_count + 1):
+        try:
+            return await asyncio.to_thread(
+                _get_weather_sync,
+                latitude,
+                longitude,
+                start,
+                end,
+                tz,
+                timeout,
+            )
+        except transient_exceptions:
+            if attempt == retry_count:
+                raise
+
+            delay = retry_backoff_seconds * (2**attempt)
+            await asyncio.sleep(delay)
+
+    raise RuntimeError("Unreachable retry loop state")
