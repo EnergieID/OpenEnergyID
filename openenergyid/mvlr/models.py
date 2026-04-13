@@ -1,5 +1,6 @@
 """Models for multivariable linear regression."""
 
+import math
 from typing import Any
 
 import pandas as pd
@@ -165,20 +166,37 @@ class IndependentVariableResult(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    @staticmethod
+    def _finite_or_none(value: float) -> float | None:
+        """Return None if value is NaN or infinite, otherwise the value itself."""
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return float(value)
+
     @classmethod
     def from_fit(cls, fit: fm.ols, name: str) -> "IndependentVariableResult":
         """Create an IndependentVariable from a fit."""
+        ci_lower = float(fit.conf_int().transpose()[name][0])
+        ci_upper = float(fit.conf_int().transpose()[name][1])
+        has_valid_ci = not (
+            math.isnan(ci_lower)
+            or math.isinf(ci_lower)
+            or math.isnan(ci_upper)
+            or math.isinf(ci_upper)
+        )
         return cls(
             name=name,
             coef=fit.params[name],
-            t_stat=fit.tvalues[name],
-            p_value=fit.pvalues[name],
-            std_err=fit.bse[name],
+            t_stat=cls._finite_or_none(fit.tvalues[name]),
+            p_value=cls._finite_or_none(fit.pvalues[name]),
+            std_err=cls._finite_or_none(fit.bse[name]),
             confidence_interval=ConfidenceInterval(
                 confidence=0.95,
-                lower=fit.conf_int().transpose()[name][0],
-                upper=fit.conf_int().transpose()[name][1],
-            ),
+                lower=ci_lower,
+                upper=ci_upper,
+            )
+            if has_valid_ci
+            else None,
         )
 
 
