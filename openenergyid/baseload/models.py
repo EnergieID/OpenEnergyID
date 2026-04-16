@@ -23,12 +23,12 @@ class BaseloadResultSchema(pa.DataFrameModel):
     """Validates analysis results"""
 
     timestamp: DateTime = pa.Field()
-    consumption_due_to_baseload_in_kilowatthour: float = pa.Field(ge=0)
+    consumption_due_to_baseload_in_kilowatthour: float | None = pa.Field(ge=0, nullable=True)
     total_consumption_in_kilowatthour: float = pa.Field(ge=0)
-    average_daily_baseload_in_watt: float = pa.Field(ge=0)
+    average_daily_baseload_in_watt: float | None = pa.Field(ge=0, nullable=True)
     average_power_in_watt: float = pa.Field(ge=0)
-    consumption_not_due_to_baseload_in_kilowatthour: float
-    baseload_ratio: float = pa.Field(ge=0, le=2)
+    consumption_not_due_to_baseload_in_kilowatthour: float | None = pa.Field(ge=0, nullable=True)
+    baseload_ratio: float | None = pa.Field(ge=0, le=2, nullable=True)
     consumption_due_to_median_baseload_in_kilowatthour: float = pa.Field(ge=0)
 
 

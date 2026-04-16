@@ -2,6 +2,7 @@
 
 from .main import LongTermPVAnalyzer
 from .models import (
+    PVBaselinePeriod,
     PVLongTermAnalysisInput,
     PVLongTermAnalysisOutput,
     PVRegressionDiagnostics,
@@ -10,6 +11,7 @@ from .models import (
 
 __all__ = [
     "LongTermPVAnalyzer",
+    "PVBaselinePeriod",
     "PVLongTermAnalysisInput",
     "PVLongTermAnalysisOutput",
     "PVYearResult",

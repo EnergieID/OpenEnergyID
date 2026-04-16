@@ -1,5 +1,7 @@
 """Pydantic models for long-term PV evolution analysis."""
 
+import datetime as dt
+
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -10,6 +12,16 @@ class PVLongTermAnalysisInput(TimeDataFrame):
     """Input model for long-term PV evolution analysis."""
 
     reference: str | None = None
+    baseline_start: dt.date | None = Field(
+        default=None,
+        validation_alias="baselineStart",
+        serialization_alias="baselineStart",
+    )
+    baseline_end: dt.date | None = Field(
+        default=None,
+        validation_alias="baselineEnd",
+        serialization_alias="baselineEnd",
+    )
     timezone: str = Field(
         validation_alias="timeZone",
         serialization_alias="timeZone",
@@ -17,48 +29,75 @@ class PVLongTermAnalysisInput(TimeDataFrame):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    def _datetime_index(self, frame: pd.DataFrame) -> pd.DatetimeIndex:
+        """Return `frame.index` as a `DatetimeIndex` for static type checkers."""
+        return pd.DatetimeIndex(frame.index)
+
     @model_validator(mode="after")
     def validate_frame(self) -> "PVLongTermAnalysisInput":
-        """Validate required columns, monthly cadence, and regression-ready values."""
+        """Validate required columns, daily cadence, and baseline coverage."""
         required_columns = {const.SOLAR_RADIATION, const.ELECTRICITY_PRODUCED}
         missing = required_columns.difference(self.columns)
         if missing:
             raise ValueError(f"Missing required columns: {sorted(missing)}")
 
-        frame = pd.DataFrame(self.data, columns=self.columns, index=self.index).sort_index()
-        required_column_names = sorted(required_columns)
+        if (self.baseline_start is None) != (self.baseline_end is None):
+            raise ValueError("Provide both 'baselineStart' and 'baselineEnd', or neither.")
+
+        if (
+            self.baseline_start is not None
+            and self.baseline_end is not None
+            and self.baseline_start > self.baseline_end
+        ):
+            raise ValueError("'baselineStart' must be on or before 'baselineEnd'.")
+
+        frame = self.to_pandas(timezone=self.timezone).sort_index()
         if frame.empty:
-            raise ValueError("At least 12 monthly rows are required for the reference period.")
+            raise ValueError("Input must contain at least one daily row.")
 
-        month_periods = (
-            pd.DatetimeIndex(pd.to_datetime(frame.index, utc=True)).tz_localize(None).to_period("M")
-        )
+        frame_index = self._datetime_index(frame)
+        local_days = frame_index.normalize().tz_localize(None)  # type: ignore
 
-        if month_periods.has_duplicates:
+        if local_days.has_duplicates:
             raise ValueError(
-                "Input must contain exactly one row per calendar month; duplicate months "
+                "Input must contain exactly one row per local calendar day; duplicate days "
                 "were found."
             )
 
-        expected_months = pd.period_range(start=month_periods[0], end=month_periods[-1], freq="M")
-        if not month_periods.equals(expected_months):
+        expected_days = pd.date_range(start=local_days[0], end=local_days[-1], freq="D")
+        if not local_days.equals(expected_days):
             raise ValueError(
-                "Input must contain contiguous monthly data with no missing calendar months."
+                "Input must contain contiguous daily data with no missing local dates."
             )
 
-        if len(self.index) < 12:
-            raise ValueError("At least 12 monthly rows are required for the reference period.")
+        first_day = local_days[0].date()
+        last_day = local_days[-1].date()
 
-        missing_mask = frame[required_column_names].isna()  # pylint: disable=unsubscriptable-object
-        if missing_mask.any().any():
-            missing_required_columns = sorted(missing_mask.columns[missing_mask.any()].tolist())
-            invalid_row_count = int(missing_mask.any(axis=1).sum())
+        if self.baseline_start is not None and self.baseline_end is not None:
+            if self.baseline_start < first_day or self.baseline_end > last_day:
+                raise ValueError(
+                    "Explicit baseline period must be fully covered by the input data."
+                )
+        else:
+            default_baseline_end = (
+                pd.Timestamp(first_day) + pd.DateOffset(months=12) - pd.Timedelta(days=1)
+            ).date()
+            if default_baseline_end > last_day:
+                raise ValueError("Input must cover the default 12-month baseline period.")
+
+        if len(local_days) < 150:
             raise ValueError(
-                "Missing values found in required columns "
-                f"{missing_required_columns} across {invalid_row_count} row(s)."
+                "Input must cover at least 150 daily rows to build a month-like baseline."
             )
 
         return self
+
+
+class PVBaselinePeriod(BaseModel):
+    """Actual inclusive baseline period used for the analysis."""
+
+    start: dt.date
+    end: dt.date
 
 
 class PVYearResult(BaseModel):
@@ -88,6 +127,7 @@ class PVLongTermAnalysisOutput(BaseModel):
     """Output model for long-term PV evolution analysis."""
 
     reference: str | None = None
+    baseline_period: PVBaselinePeriod = Field(serialization_alias="baselinePeriod")
     yearly_results: list[PVYearResult] = Field(serialization_alias="yearlyResults")
     regression_diagnostics: PVRegressionDiagnostics = Field(
         serialization_alias="regressionDiagnostics"

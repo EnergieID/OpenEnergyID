@@ -33,6 +33,13 @@ class PVLibSimulationInput(PVSimulationInputAbstract):
     """
 
     type: Literal["pvlibsimulation"] = Field("pvlibsimulation", frozen=True)  # tag
+    timeout: int = Field(60, gt=0, description="PVGIS request timeout in seconds per attempt")
+    retry_count: int = Field(
+        2, ge=0, description="Number of PVGIS retries after the initial transient failure"
+    )
+    retry_backoff_seconds: float = Field(
+        1.0, ge=0, description="Base delay in seconds for exponential retry backoff"
+    )
     modelchain: ModelChainUnion
 
 
@@ -47,6 +54,9 @@ class PVLibSimulator(PVSimulator):
         end: dt.date,
         modelchain: pvlib.modelchain.ModelChain,
         weather: pd.DataFrame | None = None,
+        timeout: int = 60,
+        retry_count: int = 2,
+        retry_backoff_seconds: float = 1.0,
         **kwargs,
     ):
         """
@@ -62,6 +72,9 @@ class PVLibSimulator(PVSimulator):
         self.end = end
         self.modelchain = modelchain
         self.weather = weather
+        self.timeout = timeout
+        self.retry_count = retry_count
+        self.retry_backoff_seconds = retry_backoff_seconds
 
     def simulate(self, **kwargs) -> pd.Series:
         """
@@ -105,11 +118,14 @@ class PVLibSimulator(PVSimulator):
         return cls(modelchain=mc, **input_.model_dump(exclude={"modelchain"}))
 
     async def load_resources(self, session: ClientSession | None = None) -> None:
-        weather = get_weather(
+        weather = await get_weather(
             latitude=self.modelchain.location.latitude,
             longitude=self.modelchain.location.longitude,
             start=self.start,
             end=self.end,
             tz=self.modelchain.location.tz,
+            timeout=self.timeout,
+            retry_count=self.retry_count,
+            retry_backoff_seconds=self.retry_backoff_seconds,
         )
         self.weather = weather
