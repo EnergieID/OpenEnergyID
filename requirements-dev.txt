@@ -377,6 +377,7 @@ requests==2.32.3
     #   energyid
     #   entsoe-py
     #   jupyterlab-server
+    #   openenergyid
     #   pvlib
 requirements-parser==0.13.0
     # via deptry
