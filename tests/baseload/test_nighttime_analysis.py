@@ -74,7 +74,8 @@ class TestNighttimeFiltering:
         """Nighttime-only analysis should find true baseload when daytime has PV interference.
 
         In the unmeasured PV scenario:
-        - Standard analysis sees the artificially LOW daytime values (50W) and uses those as baseload
+        - Standard analysis sees the artificially LOW daytime values (50W) and uses
+          those as baseload
         - Nighttime-only correctly ignores daytime and finds true baseload (200W)
         """
         # Standard analysis will be fooled by low daytime values
@@ -182,6 +183,19 @@ class TestBackwardCompatibility:
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
+    @staticmethod
+    def _collect_results(
+        power_values: list[float], start: datetime, granularity: str
+    ) -> pl.DataFrame:
+        timestamps = [start + timedelta(minutes=15 * i) for i in range(len(power_values))]
+        power_lf = (
+            pl.DataFrame({"timestamp": timestamps, "power": power_values})
+            .with_columns(pl.col("timestamp").dt.replace_time_zone("Europe/Brussels"))
+            .lazy()
+        )
+        analyzer = BaseloadAnalyzer(timezone="Europe/Brussels", quantile=0.05)
+        return analyzer.analyze(power_lf, granularity).results.collect()
+
     def test_empty_data_returns_empty_result(self):
         """Empty data should return empty result, not crash."""
         empty_lf = pl.LazyFrame(
@@ -213,6 +227,69 @@ class TestEdgeCases:
 
         # All data filtered out = empty result
         assert result.global_median_baseload == 0.0
+
+    def test_daily_results_keep_local_baseload_metrics_null_when_day_is_not_computable(self):
+        """A zero-only day should preserve baseload-derived metrics as null."""
+        results = self._collect_results(
+            power_values=[0.0] * 96 + [100.0] * 96,
+            start=datetime(2024, 1, 1, 0, 0),
+            granularity="1d",
+        )
+
+        first_day = results.row(0, named=True)
+        second_day = results.row(1, named=True)
+
+        assert first_day["consumption_due_to_baseload_in_kilowatthour"] is None
+        assert first_day["average_daily_baseload_in_watt"] is None
+        assert first_day["consumption_not_due_to_baseload_in_kilowatthour"] is None
+        assert first_day["baseload_ratio"] is None
+        assert first_day["total_consumption_in_kilowatthour"] == pytest.approx(0.0)
+        assert first_day["average_power_in_watt"] == pytest.approx(0.0)
+
+        assert second_day["consumption_due_to_baseload_in_kilowatthour"] == pytest.approx(2.4)
+        assert second_day["average_daily_baseload_in_watt"] == pytest.approx(100.0)
+        assert second_day["consumption_not_due_to_baseload_in_kilowatthour"] == pytest.approx(0.0)
+        assert second_day["baseload_ratio"] == pytest.approx(1.0)
+
+    def test_hourly_results_do_not_carry_forward_previous_days_baseload(self):
+        """Hours on a zero-only day should not inherit a prior day's baseload."""
+        results = self._collect_results(
+            power_values=[100.0] * 4 + [0.0] * 12,
+            start=datetime(2024, 1, 1, 23, 0),
+            granularity="1h",
+        )
+
+        first_hour = results.row(0, named=True)
+        zero_only_hours = results.rows(named=True)[1:]
+
+        assert first_hour["consumption_due_to_baseload_in_kilowatthour"] == pytest.approx(0.1)
+        assert first_hour["average_daily_baseload_in_watt"] == pytest.approx(100.0)
+        assert first_hour["baseload_ratio"] == pytest.approx(1.0)
+
+        for hour in zero_only_hours:
+            assert hour["consumption_due_to_baseload_in_kilowatthour"] is None
+            assert hour["average_daily_baseload_in_watt"] is None
+            assert hour["consumption_not_due_to_baseload_in_kilowatthour"] is None
+            assert hour["baseload_ratio"] is None
+            assert hour["total_consumption_in_kilowatthour"] == pytest.approx(0.0)
+            assert hour["average_power_in_watt"] == pytest.approx(0.0)
+
+    def test_monthly_results_stay_numeric_when_month_has_computable_baseload(self):
+        """Mixed months should aggregate baseload from defined days only."""
+        results = self._collect_results(
+            power_values=[0.0] * 96 + [100.0] * 96,
+            start=datetime(2024, 1, 1, 0, 0),
+            granularity="1mo",
+        )
+
+        month = results.row(0, named=True)
+
+        assert month["consumption_due_to_baseload_in_kilowatthour"] == pytest.approx(2.4)
+        assert month["average_daily_baseload_in_watt"] == pytest.approx(100.0)
+        assert month["consumption_not_due_to_baseload_in_kilowatthour"] == pytest.approx(0.0)
+        assert month["baseload_ratio"] == pytest.approx(1.0)
+        assert month["total_consumption_in_kilowatthour"] == pytest.approx(2.4)
+        assert month["average_power_in_watt"] == pytest.approx(50.0)
 
     def test_nighttime_only_data_unchanged(self):
         """Data that's already all nighttime should give same result."""
