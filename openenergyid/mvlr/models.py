@@ -200,6 +200,23 @@ class IndependentVariableResult(BaseModel):
         )
 
 
+class OutlierFilteringDiagnostics(BaseModel):
+    """Diagnostics about source observations removed before regression fitting."""
+
+    enabled: bool = True
+    original_observation_count: int = Field(alias="originalObservationCount")
+    retained_observation_count: int = Field(alias="retainedObservationCount")
+    removed_observation_count: int = Field(alias="removedObservationCount")
+    removed_non_finite_count: int = Field(alias="removedNonFiniteCount", default=0)
+    removed_negative_count: int = Field(alias="removedNegativeCount", default=0)
+    removed_zero_with_solar_count: int = Field(alias="removedZeroWithSolarCount", default=0)
+    removed_ratio_outlier_count: int = Field(alias="removedRatioOutlierCount", default=0)
+    applied: bool
+    reason: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class MultiVariableRegressionResult(BaseModel):
     """Result of a multivariable regression model."""
 
@@ -212,6 +229,10 @@ class MultiVariableRegressionResult(BaseModel):
     intercept: IndependentVariableResult
     granularity: Granularity
     frame: TimeDataFrame
+    outlier_filtering: OutlierFilteringDiagnostics | None = Field(
+        default=None,
+        alias="outlierFiltering",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

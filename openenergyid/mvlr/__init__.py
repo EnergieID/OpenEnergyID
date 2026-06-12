@@ -6,14 +6,18 @@ from .models import (
     IndependentVariableResult,
     MultiVariableRegressionInput,
     MultiVariableRegressionResult,
+    OutlierFilteringDiagnostics,
     ValidationParameters,
 )
+from .source_data_filtering import clean_regression_frame
 
 __all__ = [
     "find_best_mvlr",
+    "clean_regression_frame",
     "IndependentVariableInput",
     "MultiVariableRegressionInput",
     "MultiVariableRegressionResult",
+    "OutlierFilteringDiagnostics",
     "ValidationParameters",
     "IndependentVariableResult",
 ]
