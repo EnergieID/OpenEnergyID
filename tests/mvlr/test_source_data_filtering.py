@@ -102,3 +102,23 @@ def test_clean_regression_frame_keeps_original_data_when_filtering_too_much() ->
     assert not diagnostics.applied
     assert diagnostics.reason == "too much source data would be removed"
     assert len(cleaned) == 90
+
+
+def test_clean_regression_frame_removes_non_finite_rows_for_non_solar_models() -> None:
+    """Generic MVLR cleaning should drop non-finite observations."""
+    index = pd.date_range("2025-04-01", periods=40, freq="D", tz="Europe/Brussels")
+    frame = pd.DataFrame(
+        {
+            "energyConsumption": [10.0] * 39 + [float("nan")],
+            "temperature": [12.0 + (i % 10) for i in range(40)],
+        },
+        index=index,
+    )
+
+    cleaned, diagnostics = clean_regression_frame(frame, "energyConsumption")
+
+    assert diagnostics.applied
+    assert diagnostics.reason == "generic non-finite filtering only"
+    assert diagnostics.removed_non_finite_count == 1
+    assert diagnostics.removed_observation_count == 1
+    assert len(cleaned) == 39
