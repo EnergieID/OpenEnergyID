@@ -76,7 +76,7 @@ def clean_regression_frame(
     dependent_variable: str,
     parameters: SourceDataFilteringParameters | None = None,
 ) -> tuple[pd.DataFrame, OutlierFilteringDiagnostics]:
-    """Remove obvious bad source observations before fitting a regression model."""
+    """Remove non-finite observations from a regression frame."""
 
     parameters = parameters or SourceDataFilteringParameters()
     original_count = len(frame)
@@ -97,19 +97,49 @@ def clean_regression_frame(
         return frame, diagnostics
 
     numeric_frame = frame.apply(pd.to_numeric, errors="coerce")
-    keep = pd.Series(True, index=numeric_frame.index)
-
     finite_mask = np.isfinite(numeric_frame).all(axis=1)
-    diagnostics.removed_non_finite_count = int((keep & ~finite_mask).sum())
-    keep &= finite_mask
+    cleaned = numeric_frame.loc[finite_mask].copy()
+    removed_count = original_count - len(cleaned)
 
+    diagnostics.retained_observation_count = len(cleaned)
+    diagnostics.removed_observation_count = removed_count
+    diagnostics.removed_non_finite_count = removed_count
+    diagnostics.applied = removed_count > 0
+    diagnostics.reason = "generic non-finite filtering only"
+    return cleaned, diagnostics
+
+
+def clean_solar_source_frame(
+    frame: pd.DataFrame,
+    dependent_variable: str,
+    parameters: SourceDataFilteringParameters | None = None,
+) -> tuple[pd.DataFrame, OutlierFilteringDiagnostics]:
+    """Remove obvious bad solar source observations before aggregation."""
+
+    parameters = parameters or SourceDataFilteringParameters()
+    original_count = len(frame)
+    diagnostics = OutlierFilteringDiagnostics(
+        enabled=parameters.enabled,
+        originalObservationCount=original_count,
+        retainedObservationCount=original_count,
+        removedObservationCount=0,
+        applied=False,
+    )
+
+    if not parameters.enabled:
+        diagnostics.reason = "source-data filtering disabled"
+        return frame, diagnostics
+
+    if original_count == 0 or dependent_variable not in frame.columns:
+        diagnostics.reason = "empty frame or missing dependent variable"
+        return frame, diagnostics
+
+    numeric_frame = frame.apply(pd.to_numeric, errors="coerce")
     if not _is_solar_production_model(dependent_variable, numeric_frame, parameters):
-        cleaned = numeric_frame.loc[keep].copy()
-        diagnostics.retained_observation_count = len(cleaned)
-        diagnostics.removed_observation_count = original_count - len(cleaned)
-        diagnostics.applied = diagnostics.removed_observation_count > 0
-        diagnostics.reason = "generic non-finite filtering only"
-        return cleaned, diagnostics
+        diagnostics.reason = "not a solar production model"
+        return numeric_frame, diagnostics
+
+    keep = pd.Series(True, index=numeric_frame.index)
 
     y = numeric_frame[dependent_variable]
     negative_mask = y < 0
@@ -125,7 +155,13 @@ def clean_regression_frame(
         diagnostics.removed_zero_with_solar_count = int((keep & zero_with_solar_mask).sum())
         keep &= ~zero_with_solar_mask
 
-        ratio_candidates = keep & (y > 0) & (solar_reference > solar_threshold)
+        ratio_candidates = (
+            keep
+            & np.isfinite(y)
+            & np.isfinite(solar_reference)
+            & (y > 0)
+            & (solar_reference > solar_threshold)
+        )
         ratios = y[ratio_candidates] / solar_reference[ratio_candidates]
         ratio_outliers = _robust_ratio_outlier_mask(ratios, parameters)
         diagnostics.removed_ratio_outlier_count = int(ratio_outliers.sum())

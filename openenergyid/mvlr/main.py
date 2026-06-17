@@ -3,7 +3,7 @@
 from .helpers import resample_input_data
 from .models import MultiVariableRegressionInput, MultiVariableRegressionResult
 from .mvlr import MultiVariableLinearRegression
-from .source_data_filtering import clean_regression_frame
+from .source_data_filtering import clean_regression_frame, clean_solar_source_frame
 
 
 def find_best_mvlr(
@@ -14,13 +14,19 @@ def find_best_mvlr(
     best_filtering = None
     for granularity in data.granularities:
         frame = data.data_frame()
-        frame, filtering = clean_regression_frame(
+        frame, solar_filtering = clean_solar_source_frame(
             frame,
             data.dependent_variable,
             data.source_data_filtering,
         )
-        best_filtering = filtering
         frame = resample_input_data(data=frame, granularity=granularity)
+        frame, finite_filtering = clean_regression_frame(
+            frame,
+            data.dependent_variable,
+            data.source_data_filtering,
+        )
+        filtering = solar_filtering if solar_filtering.applied else finite_filtering
+        best_filtering = filtering
         mvlr = MultiVariableLinearRegression(
             data=frame,
             y=data.dependent_variable,

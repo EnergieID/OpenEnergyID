@@ -4,13 +4,16 @@ import math
 
 import pandas as pd
 
+from openenergyid.enums import Granularity
 from openenergyid.models import TimeDataFrame
 from openenergyid.mvlr import (
     MultiVariableRegressionInput,
     SourceDataFilteringParameters,
     clean_regression_frame,
+    clean_solar_source_frame,
     find_best_mvlr,
 )
+from openenergyid.mvlr.helpers import resample_input_data
 
 DEPENDENT = "energyProduction/solarPhotovoltaic"
 SOLAR_REFERENCE = "solarPowerGeneration"
@@ -71,7 +74,7 @@ def test_clean_regression_frame_removes_solar_source_outliers() -> None:
     data = _solar_regression_input()
     frame = data.data_frame()
 
-    cleaned, diagnostics = clean_regression_frame(frame, DEPENDENT)
+    cleaned, diagnostics = clean_solar_source_frame(frame, DEPENDENT)
 
     assert diagnostics.applied
     assert diagnostics.original_observation_count == 90
@@ -100,19 +103,19 @@ def test_clean_regression_frame_keeps_original_data_when_filtering_too_much() ->
     data = _solar_regression_input(zero_slice=slice(0, 55), spikes={})
     frame = data.data_frame()
 
-    cleaned, diagnostics = clean_regression_frame(frame, DEPENDENT)
+    cleaned, diagnostics = clean_solar_source_frame(frame, DEPENDENT)
 
     assert not diagnostics.applied
     assert diagnostics.reason == "too much source data would be removed"
     assert len(cleaned) == 90
 
 
-def test_clean_regression_frame_uses_filtering_parameters() -> None:
+def test_clean_solar_source_frame_uses_filtering_parameters() -> None:
     """Retained-data guardrails should be caller-configurable."""
     data = _solar_regression_input(zero_slice=slice(0, 55), spikes={})
     frame = data.data_frame()
 
-    cleaned, diagnostics = clean_regression_frame(
+    cleaned, diagnostics = clean_solar_source_frame(
         frame,
         DEPENDENT,
         SourceDataFilteringParameters(
@@ -151,7 +154,7 @@ def test_clean_regression_frame_can_be_disabled() -> None:
     data = _solar_regression_input()
     frame = data.data_frame()
 
-    cleaned, diagnostics = clean_regression_frame(
+    cleaned, diagnostics = clean_solar_source_frame(
         frame,
         DEPENDENT,
         SourceDataFilteringParameters(enabled=False),
@@ -181,3 +184,24 @@ def test_clean_regression_frame_removes_non_finite_rows_for_non_solar_models() -
     assert diagnostics.removed_non_finite_count == 1
     assert diagnostics.removed_observation_count == 1
     assert len(cleaned) == 39
+
+
+def test_non_finite_cleanup_after_resampling_preserves_aggregate_totals() -> None:
+    """Raw non-finite independent values should not remove energy before aggregation."""
+    index = pd.date_range("2025-04-01", periods=7, freq="D", tz="Europe/Brussels")
+    frame = pd.DataFrame(
+        {
+            "energyConsumption": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            "temperature": [10.0, 11.0, float("nan"), 13.0, 14.0, 15.0, 16.0],
+        },
+        index=index,
+    )
+
+    source_cleaned, source_diagnostics = clean_solar_source_frame(frame, "energyConsumption")
+    resampled = resample_input_data(source_cleaned, Granularity.P1M)
+    cleaned, diagnostics = clean_regression_frame(resampled, "energyConsumption")
+
+    assert not source_diagnostics.applied
+    assert resampled["energyConsumption"].iloc[0] == 28.0
+    assert len(cleaned) == 1
+    assert not diagnostics.applied
