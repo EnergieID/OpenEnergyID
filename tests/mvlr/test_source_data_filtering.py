@@ -7,6 +7,7 @@ import pandas as pd
 from openenergyid.models import TimeDataFrame
 from openenergyid.mvlr import (
     MultiVariableRegressionInput,
+    SourceDataFilteringParameters,
     clean_regression_frame,
     find_best_mvlr,
 )
@@ -30,7 +31,9 @@ def _solar_regression_input(
 
     if zero_slice:
         production.iloc[zero_slice] = 0.0
-    for idx, value in (spikes or {45: 70.0, 60: 75.0, 75: 80.0}).items():
+    if spikes is None:
+        spikes = {45: 70.0, 60: 75.0, 75: 80.0}
+    for idx, value in spikes.items():
         production.iloc[idx] = value
 
     frame = pd.DataFrame(
@@ -102,6 +105,62 @@ def test_clean_regression_frame_keeps_original_data_when_filtering_too_much() ->
     assert not diagnostics.applied
     assert diagnostics.reason == "too much source data would be removed"
     assert len(cleaned) == 90
+
+
+def test_clean_regression_frame_uses_filtering_parameters() -> None:
+    """Retained-data guardrails should be caller-configurable."""
+    data = _solar_regression_input(zero_slice=slice(0, 55), spikes={})
+    frame = data.data_frame()
+
+    cleaned, diagnostics = clean_regression_frame(
+        frame,
+        DEPENDENT,
+        SourceDataFilteringParameters(
+            minimum_retained_fraction=0.30,
+            ratio_robust_z_threshold=999.0,
+        ),
+    )
+
+    assert diagnostics.applied
+    assert diagnostics.removed_zero_with_solar_count == 55
+    assert diagnostics.removed_observation_count == 55
+    assert len(cleaned) == 35
+
+
+def test_source_data_filtering_parameters_support_json_aliases() -> None:
+    """Filtering parameters should be usable from API-shaped input."""
+    parameters = SourceDataFilteringParameters.model_validate(
+        {
+            "enabled": False,
+            "minimumRetainedRows": 12,
+            "minimumRetainedFraction": 0.25,
+            "solarReferenceNames": ["customSolarReference"],
+            "ratioRobustZThreshold": 8.0,
+        }
+    )
+
+    assert not parameters.enabled
+    assert parameters.minimum_retained_rows == 12
+    assert parameters.minimum_retained_fraction == 0.25
+    assert parameters.solar_reference_names == ("customSolarReference",)
+    assert parameters.model_dump(by_alias=True)["ratioRobustZThreshold"] == 8.0
+
+
+def test_clean_regression_frame_can_be_disabled() -> None:
+    """Filtering can be disabled without changing the source frame."""
+    data = _solar_regression_input()
+    frame = data.data_frame()
+
+    cleaned, diagnostics = clean_regression_frame(
+        frame,
+        DEPENDENT,
+        SourceDataFilteringParameters(enabled=False),
+    )
+
+    assert not diagnostics.enabled
+    assert not diagnostics.applied
+    assert diagnostics.reason == "source-data filtering disabled"
+    assert cleaned is frame
 
 
 def test_clean_regression_frame_removes_non_finite_rows_for_non_solar_models() -> None:

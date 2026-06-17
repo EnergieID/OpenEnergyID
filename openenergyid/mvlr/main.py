@@ -14,7 +14,11 @@ def find_best_mvlr(
     best_filtering = None
     for granularity in data.granularities:
         frame = data.data_frame()
-        frame, filtering = clean_regression_frame(frame, data.dependent_variable)
+        frame, filtering = clean_regression_frame(
+            frame,
+            data.dependent_variable,
+            data.source_data_filtering,
+        )
         best_filtering = filtering
         frame = resample_input_data(data=frame, granularity=granularity)
         mvlr = MultiVariableLinearRegression(

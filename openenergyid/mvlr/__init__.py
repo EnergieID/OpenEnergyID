@@ -7,6 +7,7 @@ from .models import (
     MultiVariableRegressionInput,
     MultiVariableRegressionResult,
     OutlierFilteringDiagnostics,
+    SourceDataFilteringParameters,
     ValidationParameters,
 )
 from .source_data_filtering import clean_regression_frame
@@ -18,6 +19,7 @@ __all__ = [
     "MultiVariableRegressionInput",
     "MultiVariableRegressionResult",
     "OutlierFilteringDiagnostics",
+    "SourceDataFilteringParameters",
     "ValidationParameters",
     "IndependentVariableResult",
 ]
