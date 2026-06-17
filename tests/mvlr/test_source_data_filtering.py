@@ -23,6 +23,7 @@ def _solar_regression_input(
     *,
     zero_slice: slice = slice(20, 30),
     spikes: dict[int, float] | None = None,
+    source_data_filtering: dict | None = None,
 ) -> MultiVariableRegressionInput:
     index = pd.date_range("2025-04-01", periods=90, freq="D", tz="Europe/Brussels")
     solar_reference = pd.Series(
@@ -65,8 +66,23 @@ def _solar_regression_input(
                 "f_pvalue": 0.05,
                 "pvalues": 0.05,
             },
+            "sourceDataFiltering": source_data_filtering or {},
         },
     )
+
+
+def test_source_data_filtering_is_disabled_by_default() -> None:
+    """Default behavior should preserve legacy MVLR source data."""
+    data = _solar_regression_input()
+    frame = data.data_frame()
+
+    cleaned, diagnostics = clean_solar_source_frame(frame, DEPENDENT)
+
+    assert not data.source_data_filtering.enabled
+    assert not diagnostics.enabled
+    assert not diagnostics.applied
+    assert diagnostics.reason == "source-data filtering disabled"
+    assert cleaned is frame
 
 
 def test_clean_regression_frame_removes_solar_source_outliers() -> None:
@@ -74,7 +90,11 @@ def test_clean_regression_frame_removes_solar_source_outliers() -> None:
     data = _solar_regression_input()
     frame = data.data_frame()
 
-    cleaned, diagnostics = clean_solar_source_frame(frame, DEPENDENT)
+    cleaned, diagnostics = clean_solar_source_frame(
+        frame,
+        DEPENDENT,
+        SourceDataFilteringParameters(enabled=True),
+    )
 
     assert diagnostics.applied
     assert diagnostics.original_observation_count == 90
@@ -87,7 +107,7 @@ def test_clean_regression_frame_removes_solar_source_outliers() -> None:
 
 def test_find_best_mvlr_returns_filtering_diagnostics() -> None:
     """A model should fit after bad source observations are excluded."""
-    data = _solar_regression_input()
+    data = _solar_regression_input(source_data_filtering={"enabled": True})
 
     result = find_best_mvlr(data)
 
@@ -103,7 +123,11 @@ def test_clean_regression_frame_keeps_original_data_when_filtering_too_much() ->
     data = _solar_regression_input(zero_slice=slice(0, 55), spikes={})
     frame = data.data_frame()
 
-    cleaned, diagnostics = clean_solar_source_frame(frame, DEPENDENT)
+    cleaned, diagnostics = clean_solar_source_frame(
+        frame,
+        DEPENDENT,
+        SourceDataFilteringParameters(enabled=True),
+    )
 
     assert not diagnostics.applied
     assert diagnostics.reason == "too much source data would be removed"
@@ -119,6 +143,7 @@ def test_clean_solar_source_frame_uses_filtering_parameters() -> None:
         frame,
         DEPENDENT,
         SourceDataFilteringParameters(
+            enabled=True,
             minimum_retained_fraction=0.30,
             ratio_robust_z_threshold=999.0,
         ),
@@ -177,7 +202,11 @@ def test_clean_regression_frame_removes_non_finite_rows_for_non_solar_models() -
         index=index,
     )
 
-    cleaned, diagnostics = clean_regression_frame(frame, "energyConsumption")
+    cleaned, diagnostics = clean_regression_frame(
+        frame,
+        "energyConsumption",
+        SourceDataFilteringParameters(enabled=True),
+    )
 
     assert diagnostics.applied
     assert diagnostics.reason == "generic non-finite filtering only"
@@ -197,9 +226,17 @@ def test_non_finite_cleanup_after_resampling_preserves_aggregate_totals() -> Non
         index=index,
     )
 
-    source_cleaned, source_diagnostics = clean_solar_source_frame(frame, "energyConsumption")
+    source_cleaned, source_diagnostics = clean_solar_source_frame(
+        frame,
+        "energyConsumption",
+        SourceDataFilteringParameters(enabled=True),
+    )
     resampled = resample_input_data(source_cleaned, Granularity.P1M)
-    cleaned, diagnostics = clean_regression_frame(resampled, "energyConsumption")
+    cleaned, diagnostics = clean_regression_frame(
+        resampled,
+        "energyConsumption",
+        SourceDataFilteringParameters(enabled=True),
+    )
 
     assert not source_diagnostics.applied
     assert resampled["energyConsumption"].iloc[0] == 28.0

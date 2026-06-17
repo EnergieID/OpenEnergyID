@@ -37,7 +37,7 @@ class ValidationParameters(BaseModel):
 class SourceDataFilteringParameters(BaseModel):
     """Parameters for source-data filtering before regression fitting."""
 
-    enabled: bool = True
+    enabled: bool = False
     minimum_retained_fraction: float = Field(
         0.50,
         ge=0,
