@@ -7,7 +7,9 @@
     "--security-opt",
     "apparmor=unconfined"
   ],
-  "features": {},
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
   "postCreateCommand": "zsh -l .devcontainer/post-install.sh",
   // "postStartCommand": "",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached",

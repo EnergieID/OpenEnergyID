@@ -30,5 +30,6 @@ def find_best_mvlr(
             return MultiVariableRegressionResult.from_mvlr(mvlr)
         best_rsquared = max(best_rsquared, mvlr.fit.rsquared_adj)
     raise ValueError(
-        f"No valid model found. Best R²: {best_rsquared:.3f} (need ≥{data.validation_parameters.rsquared})"
+        f"No valid model found. Best R²: {best_rsquared:.3f} "
+        f"(need ≥{data.validation_parameters.rsquared})"
     )
