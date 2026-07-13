@@ -112,6 +112,12 @@ def clean_solar_production_frame(
     y = numeric[production_column]
     keep = pd.Series(True, index=numeric.index)
 
+    # NaN/inf production (e.g. non-numeric values coerced above) would slip
+    # past the comparison masks below unnoticed, so drop it explicitly first.
+    non_finite_mask = ~np.isfinite(y)
+    diagnostics.identified_non_finite_count = int(non_finite_mask.sum())
+    keep &= ~non_finite_mask
+
     negative_mask = y < 0
     diagnostics.identified_negative_count = int(negative_mask.sum())
     keep &= ~negative_mask

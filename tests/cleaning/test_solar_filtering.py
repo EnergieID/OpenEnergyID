@@ -136,6 +136,21 @@ def test_negative_production_is_identified() -> None:
     assert len(cleaned) == 89
 
 
+def test_non_finite_production_is_filtered() -> None:
+    """NaN/inf production values must be removed explicitly, not slip through."""
+    frame = _solar_frame(zero_slice=None, spikes={})
+    frame.iloc[5, frame.columns.get_loc(PRODUCTION)] = float("nan")
+    frame.iloc[9, frame.columns.get_loc(PRODUCTION)] = float("inf")
+
+    cleaned, diagnostics = clean_solar_production_frame(frame, PRODUCTION)
+
+    assert diagnostics.status == "applied"
+    assert diagnostics.identified_non_finite_count == 2
+    assert diagnostics.removed_observation_count == 2
+    assert len(cleaned) == 88
+    assert cleaned[PRODUCTION].notna().all()
+
+
 def test_explicit_reference_column_is_used() -> None:
     """An explicitly named reference column should take precedence."""
     frame = _solar_frame().rename(columns={SOLAR_REFERENCE: "customReference"})

@@ -68,6 +68,7 @@ class FilteringDiagnostics(BaseModel):
     original_observation_count: int = Field(alias="originalObservationCount")
     retained_observation_count: int = Field(alias="retainedObservationCount")
     removed_observation_count: int = Field(alias="removedObservationCount")
+    identified_non_finite_count: int = Field(0, alias="identifiedNonFiniteCount")
     identified_negative_count: int = Field(0, alias="identifiedNegativeCount")
     identified_zero_with_solar_count: int = Field(0, alias="identifiedZeroWithSolarCount")
     identified_ratio_outlier_count: int = Field(0, alias="identifiedRatioOutlierCount")
