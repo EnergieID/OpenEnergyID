@@ -71,7 +71,7 @@ class MultiVariableRegressionInput(BaseModel):
     granularities: list[Granularity]
     allow_negative_predictions: bool = Field(alias="allowNegativePredictions", default=False)
     validation_parameters: ValidationParameters = Field(
-        alias="validationParameters", default=ValidationParameters()
+        alias="validationParameters", default_factory=ValidationParameters
     )
     single_use_exog_prefixes: list[str] | None = Field(
         # default=["HDD", "CDD", "FDD"],
