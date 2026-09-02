@@ -12,12 +12,12 @@ from openenergyid.evening_peak import (
     EveningPeakOutput,
 )
 
-from .conftest import TIMEZONE, flat_evening_profile, local_quarters
+from .conftest import TIMEZONE, day, flat_evening_profile, local_quarters
 
 
 def payload(days: int = 3, *, with_injection: bool = True, **overrides) -> dict:
     """A request body covering whole local days."""
-    index = local_quarters(dt.datetime(2026, 11, 2), days * 96)
+    index = local_quarters(day(2026, 11, 2), days * 96)
     stamps = [timestamp.isoformat() for timestamp in index]
     body = {
         "timeZone": TIMEZONE,

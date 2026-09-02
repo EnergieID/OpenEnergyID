@@ -11,6 +11,11 @@ from openenergyid.models import TimeSeries
 TIMEZONE = "Europe/Amsterdam"
 
 
+def day(year: int, month: int, day_of_month: int, hour: int = 0, minute: int = 0) -> dt.datetime:
+    """A naive local wall-clock moment, to be localized by :func:`local_quarters`."""
+    return dt.datetime(year, month, day_of_month, hour, minute)  # noqa: DTZ001
+
+
 def local_quarters(
     start_local: dt.datetime, count: int, timezone: str = TIMEZONE
 ) -> list[dt.datetime]:
@@ -20,7 +25,7 @@ def local_quarters(
     yields 100 timestamps and a 23-hour day yields 92.
     """
     zone = ZoneInfo(timezone)
-    start_utc = start_local.replace(tzinfo=zone).astimezone(dt.timezone.utc)
+    start_utc = start_local.replace(tzinfo=zone).astimezone(dt.UTC)
     return [(start_utc + dt.timedelta(minutes=15 * i)).astimezone(zone) for i in range(count)]
 
 

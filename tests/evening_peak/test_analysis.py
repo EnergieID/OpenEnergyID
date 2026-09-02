@@ -1,6 +1,7 @@
 """Tests for the evening peak avoidance analysis."""
 
 import datetime as dt
+import itertools
 
 import polars as pl
 import pytest
@@ -11,7 +12,14 @@ from openenergyid.evening_peak import (
     summarize,
 )
 
-from .conftest import TIMEZONE, flat_evening_profile, frame, in_evening, local_quarters
+from .conftest import (
+    TIMEZONE,
+    day,
+    flat_evening_profile,
+    frame,
+    in_evening,
+    local_quarters,
+)
 
 # Baseload 0.05 kWh/quarter for 76 quarters, 0.5 kWh/quarter for the 20 evening quarters.
 FLAT_DAILY_OFFTAKE = 76 * 0.05 + 20 * 0.5
@@ -33,7 +41,7 @@ class TestDailyMetrics:
 
     @pytest.fixture
     def one_flat_day(self) -> pl.LazyFrame:
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         return frame(index, flat_evening_profile)
 
     def test_peak_and_share_match_hand_computation(self, one_flat_day):
@@ -50,7 +58,7 @@ class TestDailyMetrics:
 
     def test_peak_ignores_a_larger_spike_outside_the_window(self):
         """A midday spike must not become the evening peak, however large."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
 
         def profile(timestamp: dt.datetime) -> float:
             if timestamp.hour == 12 and timestamp.minute == 0:
@@ -66,7 +74,7 @@ class TestDailyMetrics:
 
     def test_share_is_null_on_a_day_without_offtake(self):
         """A day of zeroes must not raise, and has no meaningful share."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         _, daily, _ = analyze(frame(index, lambda _: 0.0))
         row = daily.row(0, named=True)
 
@@ -78,7 +86,7 @@ class TestDailyMetrics:
 
     def test_window_bounds_are_half_open(self):
         """21:00 belongs to the next window, 16:00 to this one."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
 
         def only_edges(timestamp: dt.datetime) -> float:
             if (timestamp.hour, timestamp.minute) == (16, 0):
@@ -99,7 +107,7 @@ class TestInjection:
 
     def test_share_stays_within_bounds_when_injection_dominates(self):
         """Midday injection above offtake must not push the share over 100%."""
-        index = local_quarters(dt.datetime(2026, 6, 15), 96)
+        index = local_quarters(day(2026, 6, 15), 96)
 
         def injection(timestamp: dt.datetime) -> float:
             # A big solar midday, larger than the concurrent offtake.
@@ -116,7 +124,7 @@ class TestInjection:
 
     def test_clipping_is_per_quarter_not_on_the_daily_total(self):
         """Surplus injection in one quarter must not offset offtake in another."""
-        index = local_quarters(dt.datetime(2026, 6, 15), 96)
+        index = local_quarters(day(2026, 6, 15), 96)
         # 1 kWh of offtake at 18:00 only; 5 kWh of injection at 12:00 only.
         offtake = frame(
             index,
@@ -136,7 +144,7 @@ class TestInjection:
 
     def test_injection_may_be_omitted(self):
         """A connection without production sends no injection series."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         _, with_none, _ = analyze(frame(index, flat_evening_profile), None)
         _, with_zeros, _ = analyze(
             frame(index, flat_evening_profile),
@@ -149,7 +157,7 @@ class TestInjection:
 
     def test_injection_covering_a_shorter_range_is_treated_as_zero(self):
         """Missing injection quarter-hours must not drop offtake rows."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         partial = index[:10]
         _, daily, _ = analyze(
             frame(index, flat_evening_profile),
@@ -166,7 +174,7 @@ class TestCoverage:
 
     def test_evening_only_day_reports_a_peak_but_no_share(self):
         """The classic partial export: the window is there, the denominator is not."""
-        index = [t for t in local_quarters(dt.datetime(2026, 11, 2), 96) if in_evening(t)]
+        index = [t for t in local_quarters(day(2026, 11, 2), 96) if in_evening(t)]
         _, daily, _ = analyze(frame(index, flat_evening_profile))
         row = daily.row(0, named=True)
 
@@ -178,9 +186,7 @@ class TestCoverage:
 
     def test_day_missing_part_of_the_window_reports_no_peak(self):
         index = [
-            t
-            for t in local_quarters(dt.datetime(2026, 11, 2), 96)
-            if not (t.hour == 18 and t.minute == 0)
+            t for t in local_quarters(day(2026, 11, 2), 96) if not (t.hour == 18 and t.minute == 0)
         ]
         _, daily, _ = analyze(frame(index, flat_evening_profile))
         row = daily.row(0, named=True)
@@ -192,8 +198,8 @@ class TestCoverage:
 
     def test_incomplete_days_are_excluded_from_the_summary_counts(self):
         """measuredDays is the denominator of the "x of y days" figure."""
-        complete = local_quarters(dt.datetime(2026, 11, 2), 96)
-        partial = [t for t in local_quarters(dt.datetime(2026, 11, 3), 96) if in_evening(t)]
+        complete = local_quarters(day(2026, 11, 2), 96)
+        partial = [t for t in local_quarters(day(2026, 11, 3), 96) if in_evening(t)]
         _, _, result = analyze(frame(complete + partial, flat_evening_profile))
         stats = summarize(result, peak_share_threshold=0.37)
 
@@ -205,7 +211,7 @@ class TestThreshold:
 
     def test_count_is_strictly_below_the_threshold(self):
         """A day sitting exactly on the threshold does not count as below it."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         # Constant offtake all day: the share equals the window's share of the day.
         _, daily, result = analyze(frame(index, lambda _: 0.25))
         share = daily.row(0, named=True)["evening_peak_share_in_percent"]
@@ -220,7 +226,7 @@ class TestThreshold:
         assert stats["threshold_in_percent"] == pytest.approx(37.0)
 
     def test_threshold_is_configurable(self):
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         _, daily, _ = analyze(frame(index, flat_evening_profile), peak_share_threshold=0.9)
         assert daily.row(0, named=True)["is_below_threshold"] is True
 
@@ -230,8 +236,8 @@ class TestDaylightSaving:
 
     def test_long_and_short_days_are_each_one_row_with_correct_length(self):
         # 2026-10-25 falls back (25 hours); 2026-03-29 springs forward (23 hours).
-        autumn = local_quarters(dt.datetime(2026, 10, 24), 4 * 96)
-        spring = local_quarters(dt.datetime(2026, 3, 28), 4 * 96)
+        autumn = local_quarters(day(2026, 10, 24), 4 * 96)
+        spring = local_quarters(day(2026, 3, 28), 4 * 96)
 
         for index, transition, quarters in (
             (autumn, dt.date(2026, 10, 25), 100),
@@ -252,7 +258,7 @@ class TestDaylightSaving:
 
     def test_share_denominator_follows_the_real_day_length(self):
         """The 25-hour day has an extra hour of baseload, so a lower share."""
-        autumn = local_quarters(dt.datetime(2026, 10, 24), 4 * 96)
+        autumn = local_quarters(day(2026, 10, 24), 4 * 96)
         _, daily, _ = analyze(frame(autumn, flat_evening_profile))
         days = {row["day"].date(): row for row in daily.iter_rows(named=True)}
 
@@ -267,7 +273,7 @@ class TestWeekMedians:
 
     def test_medians_are_monday_aligned_and_one_row_per_week(self):
         # 2026-11-02 is a Monday; three weeks of data.
-        index = local_quarters(dt.datetime(2026, 11, 2), 21 * 96)
+        index = local_quarters(day(2026, 11, 2), 21 * 96)
         _, _, result = analyze(frame(index, flat_evening_profile))
         weeks = result.week_medians.collect()
 
@@ -281,15 +287,15 @@ class TestWeekMedians:
 
     def test_medians_start_on_the_monday_of_a_partial_first_week(self):
         # 2026-11-04 is a Wednesday.
-        index = local_quarters(dt.datetime(2026, 11, 4), 5 * 96)
+        index = local_quarters(day(2026, 11, 4), 5 * 96)
         _, _, result = analyze(frame(index, flat_evening_profile))
         weeks = result.week_medians.collect()
 
         assert weeks.row(0, named=True)["week"].date() == dt.date(2026, 11, 2)
 
     def test_medians_ignore_incomplete_days(self):
-        complete = local_quarters(dt.datetime(2026, 11, 2), 96)
-        partial = [t for t in local_quarters(dt.datetime(2026, 11, 3), 96) if in_evening(t)]
+        complete = local_quarters(day(2026, 11, 2), 96)
+        partial = [t for t in local_quarters(day(2026, 11, 3), 96) if in_evening(t)]
 
         def profile(timestamp: dt.datetime) -> float:
             # Give the partial day a wildly different level.
@@ -312,7 +318,7 @@ class TestPeakMoments:
     @pytest.fixture
     def rising_peaks(self) -> pl.LazyFrame:
         """Ten days whose evening peak grows by 0.1 kWh/quarter each day."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 10 * 96)
+        index = local_quarters(day(2026, 11, 2), 10 * 96)
         first_day = index[0].date()
 
         def profile(timestamp: dt.datetime) -> float:
@@ -353,12 +359,10 @@ class TestPeakMoments:
         assert len(analyzer.peak_moments(net, num_peaks=50)) == 10
 
     def test_days_without_a_full_window_are_skipped(self):
-        full = local_quarters(dt.datetime(2026, 11, 2), 96)
+        full = local_quarters(day(2026, 11, 2), 96)
         # A later day with a much bigger evening, but a hole in the window.
         broken = [
-            t
-            for t in local_quarters(dt.datetime(2026, 11, 3), 96)
-            if not (t.hour == 19 and t.minute == 0)
+            t for t in local_quarters(day(2026, 11, 3), 96) if not (t.hour == 19 and t.minute == 0)
         ]
 
         def profile(timestamp: dt.datetime) -> float:
@@ -394,7 +398,7 @@ class TestEdgeCases:
         assert stats["first_day"] is None
 
     def test_all_null_values_are_dropped(self):
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         from openenergyid.models import TimeSeries
 
         nulls = TimeSeries(name="gross_offtake", index=index, data=[None] * 96).to_polars(
@@ -404,7 +408,7 @@ class TestEdgeCases:
         assert daily.height == 0
 
     def test_a_single_quarter_hour(self):
-        index = local_quarters(dt.datetime(2026, 11, 2, 18, 0), 1)
+        index = local_quarters(day(2026, 11, 2, 18, 0), 1)
         _, daily, _ = analyze(frame(index, flat_evening_profile))
         row = daily.row(0, named=True)
 
@@ -439,20 +443,20 @@ class TestConfigurationValidation:
         )
         assert analyzer.expected_window_quarters == 12
 
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         daily = analyzer.analyze(
             analyzer.prepare_net_offtake(frame(index, flat_evening_profile))
         ).daily.collect()
         assert daily.row(0, named=True)["observed_window_quarters"] == 12
 
     def test_frame_with_too_many_value_columns_is_rejected(self):
-        bad = pl.LazyFrame({"timestamp": [dt.datetime(2026, 11, 2)], "a": [1.0], "b": [2.0]})
+        bad = pl.LazyFrame({"timestamp": [day(2026, 11, 2)], "a": [1.0], "b": [2.0]})
         analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
         with pytest.raises(ValueError, match="exactly one value column"):
             analyzer.prepare_net_offtake(bad)
 
     def test_frame_without_timestamp_is_rejected(self):
-        bad = pl.LazyFrame({"when": [dt.datetime(2026, 11, 2)], "a": [1.0]})
+        bad = pl.LazyFrame({"when": [day(2026, 11, 2)], "a": [1.0]})
         analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
         with pytest.raises(ValueError, match="must have a 'timestamp' column"):
             analyzer.prepare_net_offtake(bad)
@@ -462,7 +466,7 @@ class TestTimezoneHandling:
     """The analysis timezone decides where day boundaries fall."""
 
     def test_naive_timestamps_are_read_as_utc(self):
-        index = [dt.datetime(2026, 11, 2, 15, 0) + dt.timedelta(minutes=15 * i) for i in range(8)]
+        index = [day(2026, 11, 2, 15, 0) + dt.timedelta(minutes=15 * i) for i in range(8)]
         naive = pl.LazyFrame({"timestamp": index, "gross_offtake": [1.0] * 8})
         analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
         net = analyzer.prepare_net_offtake(naive).collect()
@@ -474,7 +478,7 @@ class TestTimezoneHandling:
 
     def test_the_same_instants_split_differently_in_another_timezone(self):
         """A day boundary in one zone is mid-evening in another."""
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         offtake = frame(index, flat_evening_profile)
 
         amsterdam = EveningPeakAnalyzer(timezone="Europe/Amsterdam")
@@ -494,7 +498,7 @@ class TestResultSchema:
     @staticmethod
     def _daily_frame(**overrides) -> pl.DataFrame:
         row = {
-            "day": dt.datetime(2026, 11, 2),
+            "day": day(2026, 11, 2),
             "evening_peak_in_kilowatt": 2.0,
             "evening_peak_share_in_percent": 40.0,
             "daily_offtake_in_kilowatthour": 10.0,
@@ -530,7 +534,7 @@ class TestResultSchema:
         assert validated.schema["day"].time_zone == TIMEZONE
 
     def test_analysis_output_keeps_its_timezone_through_validation(self):
-        index = local_quarters(dt.datetime(2026, 11, 2), 96)
+        index = local_quarters(day(2026, 11, 2), 96)
         _, daily, result = analyze(frame(index, flat_evening_profile))
 
         assert daily.schema["day"].time_zone == TIMEZONE
@@ -545,7 +549,7 @@ class TestGaps:
         """Seven calendar days, with the middle three entirely missing."""
         index = [
             timestamp
-            for timestamp in local_quarters(dt.datetime(2026, 11, 2), 7 * 96)
+            for timestamp in local_quarters(day(2026, 11, 2), 7 * 96)
             if timestamp.date()
             not in {dt.date(2026, 11, 4), dt.date(2026, 11, 5), dt.date(2026, 11, 6)}
         ]
@@ -586,5 +590,5 @@ class TestGaps:
         days = [row["day"] for row in daily.iter_rows(named=True)]
 
         assert days == sorted(days)
-        gaps = {(later - earlier).days for earlier, later in zip(days, days[1:])}
+        gaps = {(later - earlier).days for earlier, later in itertools.pairwise(days)}
         assert gaps == {1}
