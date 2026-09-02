@@ -259,14 +259,18 @@ class EveningPeakOutput(BaseModel):
         alias="dailyPeak",
         description=(
             "Highest evening peak per day, in kW, indexed by the start of the local "
-            "day. Null on days whose evening window was not fully measured."
+            "day. The index is a gapless run of days covering the measured range, so it "
+            "can be plotted directly; the value is null on days whose evening window "
+            "was not fully measured and on days with no measurements at all, which "
+            "breaks the line where the data breaks."
         ),
     )
     daily_share: TimeSeries = Field(
         alias="dailyShare",
         description=(
-            "Peak share per day, in percent, indexed by the start of the local day. "
-            "Null on incompletely measured days and on days without offtake."
+            "Peak share per day, in percent, on the same gapless daily index as "
+            "dailyPeak. Null on incompletely measured days, on days with no "
+            "measurements, and on days without any offtake."
         ),
     )
     week_median_peak: TimeSeries = Field(

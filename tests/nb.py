@@ -23,6 +23,7 @@ def run_notebook(notebook_path):
     "notebook",
     [
         "demo_capacity_analysis.ipynb",
+        "demo_evening_peak.ipynb",
         "demo_dyntar_analysis.ipynb",
         "demo_energiedelen.ipynb",
         "demo_energyid_download.ipynb",

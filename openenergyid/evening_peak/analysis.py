@@ -43,7 +43,10 @@ class EveningPeakAnalysisResult:
     Attributes
     ----------
     daily : pl.LazyFrame
-        One row per local day, with columns:
+        One row per local day, over a gapless run of days covering the measured range.
+        A day with no measurements at all is present with null metrics and
+        ``observed_quarters == 0``, so a break in the feed shows up in the series
+        instead of having to be inferred from a jump in the index. Columns:
 
         - ``day``: start of the local day
         - ``evening_peak_in_kilowatt``: highest quarter-hour power inside the window;
@@ -177,6 +180,30 @@ class EveningPeakAnalyzer:
         span = self._minute_of_day(self.window_end) - self._minute_of_day(self.window_start)
         return span // QUARTER_HOUR_MINUTES
 
+    def _day_spine(self, observed: pl.LazyFrame) -> pl.LazyFrame:
+        """A gapless run of local days covering the observed range.
+
+        Days with no measurements at all are kept as rows with null metrics rather than
+        dropped, so a gap in the feed is visible in the result instead of having to be
+        inferred from a jump in the index. A chart drawn straight from the series then
+        breaks where the data breaks.
+        """
+        bounds = observed.select(
+            pl.col(DAY).min().alias("first"), pl.col(DAY).max().alias("last")
+        ).collect()
+        first_day, last_day = bounds.row(0)
+        return pl.LazyFrame(
+            {
+                DAY: pl.datetime_range(
+                    first_day,
+                    last_day,
+                    interval="1d",
+                    time_zone=self.timezone,
+                    eager=True,
+                )
+            }
+        )
+
     def _in_window(self) -> pl.Expr:
         """Predicate selecting quarter-hours inside the evening window.
 
@@ -301,7 +328,7 @@ class EveningPeakAnalyzer:
             self._in_window().alias("in_window"),
         )
 
-        daily = (
+        observed = (
             tagged.group_by(DAY)
             .agg(
                 pl.col(NET_OFFTAKE).sum().alias("daily_offtake_in_kilowatthour"),
@@ -314,6 +341,17 @@ class EveningPeakAnalyzer:
                 pl.col("in_window").sum().cast(pl.Int64).alias("observed_window_quarters"),
             )
             .sort(DAY)
+        )
+
+        daily = (
+            self._day_spine(observed)
+            .join(observed, on=DAY, how="left")
+            .with_columns(
+                pl.col("daily_offtake_in_kilowatthour").fill_null(0.0),
+                pl.col("evening_offtake_in_kilowatthour").fill_null(0.0),
+                pl.col("observed_quarters").fill_null(0),
+                pl.col("observed_window_quarters").fill_null(0),
+            )
             # Day length is DST-aware: the October day has 100 quarter-hours and the
             # March day 92, so coverage cannot be measured against a constant 96.
             .with_columns(

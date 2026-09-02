@@ -535,3 +535,56 @@ class TestResultSchema:
 
         assert daily.schema["day"].time_zone == TIMEZONE
         assert result.week_medians.collect().schema["week"].time_zone == TIMEZONE
+
+
+class TestGaps:
+    """A gap in the feed must be visible in the result, not inferable from it."""
+
+    @pytest.fixture
+    def week_with_a_hole(self) -> pl.LazyFrame:
+        """Seven calendar days, with the middle three entirely missing."""
+        index = [
+            timestamp
+            for timestamp in local_quarters(dt.datetime(2026, 11, 2), 7 * 96)
+            if timestamp.date()
+            not in {dt.date(2026, 11, 4), dt.date(2026, 11, 5), dt.date(2026, 11, 6)}
+        ]
+        return frame(index, flat_evening_profile)
+
+    def test_unmeasured_days_are_kept_as_rows(self, week_with_a_hole):
+        _, daily, _ = analyze(week_with_a_hole)
+
+        assert daily.height == 7, "the index spans the whole range, gap included"
+        missing = daily.filter(pl.col("observed_quarters") == 0)
+        assert missing.height == 3
+        assert [row["day"].date() for row in missing.iter_rows(named=True)] == [
+            dt.date(2026, 11, 4),
+            dt.date(2026, 11, 5),
+            dt.date(2026, 11, 6),
+        ]
+
+    def test_unmeasured_days_carry_nulls_not_zeroes(self, week_with_a_hole):
+        """A day with no data has no peak; reporting 0 kW would be a lie."""
+        _, daily, _ = analyze(week_with_a_hole)
+        missing = daily.filter(pl.col("observed_quarters") == 0)
+
+        assert missing["evening_peak_in_kilowatt"].null_count() == 3
+        assert missing["evening_peak_share_in_percent"].null_count() == 3
+        assert missing["is_below_threshold"].null_count() == 3
+        assert not any(missing["is_complete"].to_list())
+
+    def test_gaps_do_not_count_towards_the_measured_days(self, week_with_a_hole):
+        _, _, result = analyze(week_with_a_hole)
+        stats = summarize(result, peak_share_threshold=0.37)
+
+        assert stats["measured_days"] == 4
+        assert stats["first_day"] == dt.date(2026, 11, 2)
+        assert stats["last_day"] == dt.date(2026, 11, 8)
+
+    def test_the_daily_index_is_gapless_and_ordered(self, week_with_a_hole):
+        _, daily, _ = analyze(week_with_a_hole)
+        days = [row["day"] for row in daily.iter_rows(named=True)]
+
+        assert days == sorted(days)
+        gaps = {(later - earlier).days for earlier, later in zip(days, days[1:])}
+        assert gaps == {1}
