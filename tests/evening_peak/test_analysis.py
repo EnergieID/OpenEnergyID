@@ -9,6 +9,7 @@ import pytest
 from openenergyid.evening_peak import (
     DailyEveningPeakSchema,
     EveningPeakAnalyzer,
+    NetOfftakeSchema,
     summarize,
 )
 
@@ -592,3 +593,33 @@ class TestGaps:
         assert days == sorted(days)
         gaps = {(later - earlier).days for earlier, later in itertools.pairwise(days)}
         assert gaps == {1}
+
+
+class TestPreparedSeriesContract:
+    """``prepare_net_offtake`` promises a frame that satisfies ``NetOfftakeSchema``.
+
+    The schema is not validated on the request path — pandera runs no value checks on a
+    LazyFrame, and doing so costs a PerformanceWarning per call — so the promise is
+    asserted here instead.
+    """
+
+    def test_prepared_series_satisfies_the_schema(self):
+        index = local_quarters(day(2026, 6, 15), 96)
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+        prepared = analyzer.prepare_net_offtake(
+            frame(index, flat_evening_profile),
+            frame(index, lambda t: 3.0 if 10 <= t.hour < 16 else 0.0, name="gross_injection"),
+        ).collect()
+
+        NetOfftakeSchema.validate(prepared)
+        assert prepared["net_offtake_in_kilowatthour"].min() >= 0
+        assert prepared.schema["timestamp"].time_zone == TIMEZONE
+
+    def test_prepared_series_is_sorted_and_free_of_nulls(self):
+        index = local_quarters(day(2026, 11, 2), 96)
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+        prepared = analyzer.prepare_net_offtake(frame(index, flat_evening_profile)).collect()
+
+        timestamps = prepared["timestamp"].to_list()
+        assert timestamps == sorted(timestamps)
+        assert prepared["net_offtake_in_kilowatthour"].null_count() == 0

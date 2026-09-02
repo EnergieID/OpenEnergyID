@@ -189,3 +189,15 @@ class TestOutput:
         assert response["peakMoments"] == []
         assert response["summary"]["measuredDays"] == 0
         assert response["summary"]["firstDay"] is None
+
+
+class TestTimezoneValidation:
+    """An unknown timezone is a bad request, not a runtime failure."""
+
+    def test_unknown_timezone_is_rejected(self):
+        with pytest.raises(ValidationError, match="not a known IANA time zone"):
+            EveningPeakInput.model_validate(payload(1, timeZone="Mars/Olympus"))
+
+    @pytest.mark.parametrize("zone", ["Europe/Amsterdam", "Europe/Brussels", "UTC"])
+    def test_real_timezones_are_accepted(self, zone):
+        assert EveningPeakInput.model_validate(payload(1, timeZone=zone)).timezone == zone

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from .schemas import DailyEveningPeakSchema, NetOfftakeSchema, WeekMedianSchema
+from .schemas import DailyEveningPeakSchema, WeekMedianSchema
 
 #: Quarter-hourly energy in kWh multiplied by this gives average power in kW.
 QUARTERS_PER_HOUR = 4
@@ -317,7 +317,6 @@ class EveningPeakAnalyzer:
         EveningPeakAnalysisResult
         """
         net_lf = self._localize(net_lf.select(TIMESTAMP, NET_OFFTAKE)).sort(TIMESTAMP)
-        NetOfftakeSchema.validate(net_lf)
 
         if net_lf.select(pl.len()).collect().item() == 0:
             return self._empty_result()

@@ -7,6 +7,7 @@ OpenAPI documentation. Keep them descriptive.
 
 import datetime as dt
 from typing import Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -137,6 +138,20 @@ class EveningPeakInput(BaseModel):
                 f"windowStart ({self.window_start}) must be strictly before "
                 f"windowEnd ({self.window_end})."
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_timezone(self) -> Self:
+        """The timezone must be a real IANA zone.
+
+        Checked here so an unknown zone is a rejected request with a clear message,
+        rather than an error raised deep in the dataframe layer once the analysis is
+        already running.
+        """
+        try:
+            ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"timeZone {self.timezone!r} is not a known IANA time zone.") from exc
         return self
 
     @model_validator(mode="after")
