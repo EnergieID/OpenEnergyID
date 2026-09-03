@@ -6,6 +6,8 @@ OpenAPI documentation. Keep them descriptive.
 """
 
 import datetime as dt
+import itertools
+import math
 from typing import Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -14,7 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from openenergyid.models import TimeSeries
 
-from .analysis import DAY, WEEK, EveningPeakAnalysisResult, PeakMoment, summarize
+from .analysis import (
+    DAY,
+    QUARTER_HOUR_MINUTES,
+    WEEK,
+    EveningPeakAnalysisResult,
+    PeakMoment,
+    summarize,
+)
 
 
 class EveningPeakInput(BaseModel):
@@ -34,17 +43,21 @@ class EveningPeakInput(BaseModel):
         alias="grossOfftake",
         description=(
             "Gross offtake from the grid, in kWh per quarter-hour, non-negative. "
-            "Timestamps label the start of each interval and must carry a UTC offset."
+            "Timestamps label the start of each interval, must carry a UTC offset, and "
+            "must fall on a quarter-hour boundary with no repeats. This analysis is built "
+            "for 15-minute data only; coarser or finer intervals are rejected."
         ),
     )
     gross_injection: TimeSeries | None = Field(
         default=None,
         alias="grossInjection",
         description=(
-            "Gross injection into the grid, in kWh per quarter-hour, non-negative. "
-            "Omit for a connection without production; net offtake then equals gross "
-            "offtake. Timestamps need not cover exactly the same range as grossOfftake: "
-            "missing quarter-hours are treated as zero injection."
+            "Gross injection into the grid, in kWh per quarter-hour, non-negative, under "
+            "the same timestamp rules as grossOfftake. Omit for a connection without "
+            "production; net offtake then equals gross offtake. May report fewer "
+            "quarter-hours than grossOfftake: missing quarter-hours are treated as zero "
+            "injection. A quarter-hour present only in grossInjection is ignored — "
+            "grossOfftake defines which quarter-hours are analysed."
         ),
     )
     timezone: str = Field(
@@ -132,11 +145,25 @@ class EveningPeakInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_window(self) -> Self:
-        """The window must be a non-empty, forward interval."""
+        """The window must be a non-empty, forward interval spanning whole quarter-hours.
+
+        A span that floors to zero quarter-hours (e.g. a 10-minute window) would make
+        ``expected_window_quarters`` zero and every coverage check vacuously true; a span
+        that is not a whole number of quarter-hours is off by one in the other direction.
+        """
         if self.window_start >= self.window_end:
             raise ValueError(
                 f"windowStart ({self.window_start}) must be strictly before "
                 f"windowEnd ({self.window_end})."
+            )
+        start_minutes = self.window_start.hour * 60 + self.window_start.minute
+        end_minutes = self.window_end.hour * 60 + self.window_end.minute
+        span = end_minutes - start_minutes
+        if span % QUARTER_HOUR_MINUTES != 0:
+            raise ValueError(
+                f"The window from windowStart ({self.window_start}) to windowEnd "
+                f"({self.window_end}) spans {span} minutes, which is not a whole number "
+                f"of {QUARTER_HOUR_MINUTES}-minute quarter-hours."
             )
         return self
 
@@ -175,6 +202,125 @@ class EveningPeakInput(BaseModel):
                 )
         return self
 
+    @model_validator(mode="after")
+    def validate_measurement_grid(self) -> Self:
+        """Everything the analysis assumes about the timestamps, checked for real.
+
+        Declared after :meth:`validate_series_lengths` deliberately: pydantic stops at the
+        first ``mode="after"`` validator that raises, so if this one ran first on a
+        length-mismatched payload it could report a confusing grid-shaped message instead
+        of the real "lengths don't match" error.
+
+        Checks, per series:
+
+        - every timestamp is timezone-aware (a naive timestamp is silently read as UTC
+          further down the pipeline, which is a plausible wrong answer, not an error)
+        - every timestamp falls on a quarter-hour boundary (``:00``, ``:15``, ``:30`` or
+          ``:45``, no seconds or microseconds)
+        - the *minimum* gap between consecutive present timestamps is exactly 15 minutes
+
+        The last two together are what make "PT15M and nothing else" a checked contract
+        rather than an assumption. Alignment alone is not enough: hourly data lands on
+        ``:00`` every time, which trivially satisfies "on a quarter-hour boundary," so an
+        alignment-only check would let hourly data through to produce a wall of
+        incomplete, null-heavy days with no indication of why. The minimum-gap check
+        catches that — genuine quarter-hourly data always has *some* pair of consecutive
+        readings 15 minutes apart, even when the series has gaps elsewhere, so a series
+        whose minimum gap is 30 or 60 minutes is not quarter-hourly at all. A series with
+        fewer than two timestamps has no gap to measure and is let through: there is too
+        little data to judge an interval from, and the existing coverage logic already
+        handles a sparse day gracefully.
+
+        - no timestamp repeats within the series
+        - every value is finite (``None`` is a legitimate gap; ``NaN``/``inf`` are not,
+          and ``is_not_null()`` downstream does not catch a ``NaN``)
+
+        All violations found, across both series, are collected and raised together, so a
+        caller sees every problem in one round trip instead of fixing and resubmitting
+        repeatedly.
+        """
+        problems: list[str] = []
+        for alias, series in (
+            ("grossOfftake", self.gross_offtake),
+            ("grossInjection", self.gross_injection),
+        ):
+            if series is None:
+                continue
+            problems.extend(self._measurement_grid_problems(alias, series))
+        if problems:
+            raise ValueError(" ".join(problems))
+        return self
+
+    @staticmethod
+    def _measurement_grid_problems(alias: str, series: TimeSeries) -> list[str]:
+        """The specific grid violations found in one series, as human-readable sentences."""
+        problems: list[str] = []
+        index = series.index
+        data = series.data
+
+        naive = [timestamp for timestamp in index if timestamp.tzinfo is None]
+        if naive:
+            problems.append(
+                f"{alias} has {len(naive)} timestamp(s) with no UTC offset (e.g. "
+                f"{naive[0].isoformat()!r}); every timestamp must be timezone-aware."
+            )
+
+        misaligned = [
+            timestamp
+            for timestamp in index
+            if (timestamp.minute % QUARTER_HOUR_MINUTES, timestamp.second, timestamp.microsecond)
+            != (0, 0, 0)
+        ]
+        if misaligned:
+            problems.append(
+                f"{alias} has {len(misaligned)} timestamp(s) not aligned to a "
+                f"quarter-hour (e.g. {misaligned[0].isoformat()!r}); every timestamp must "
+                "fall on :00, :15, :30 or :45."
+            )
+
+        # A naive timestamp makes ordering undefined against the aware ones (it might
+        # represent any instant, depending on an offset nothing states), so the density
+        # check — which needs a total ordering across the whole series — is skipped
+        # whenever any naive timestamp is present. The naive violation above is enough to
+        # reject the request; density can be assessed once the caller fixes that.
+        if not naive:
+            ordered = sorted(set(index))
+            if len(ordered) >= 2:
+                gaps_in_minutes = [
+                    (later - earlier).total_seconds() / 60
+                    for earlier, later in itertools.pairwise(ordered)
+                ]
+                minimum_gap = min(gaps_in_minutes)
+                if minimum_gap != QUARTER_HOUR_MINUTES:
+                    problems.append(
+                        f"{alias} has a minimum gap of {minimum_gap:g} minutes between "
+                        f"consecutive timestamps; this analysis is built for "
+                        f"{QUARTER_HOUR_MINUTES}-minute data only, so the smallest gap "
+                        f"present must be exactly {QUARTER_HOUR_MINUTES} minutes."
+                    )
+
+        seen: set[dt.datetime] = set()
+        duplicates: set[dt.datetime] = set()
+        for timestamp in index:
+            if timestamp in seen:
+                duplicates.add(timestamp)
+            seen.add(timestamp)
+        if duplicates:
+            example = min(duplicates, key=str)
+            problems.append(
+                f"{alias} has {len(duplicates)} repeated timestamp(s) (e.g. "
+                f"{example.isoformat()!r}); each quarter-hour must appear at most once."
+            )
+
+        non_finite = [value for value in data if value is not None and not math.isfinite(value)]
+        if non_finite:
+            problems.append(
+                f"{alias} has {len(non_finite)} non-finite value(s) (NaN or infinity); "
+                "values must be finite."
+            )
+
+        return problems
+
     def to_polars(self) -> tuple[pl.LazyFrame, pl.LazyFrame | None]:
         """Convert the two gross series to Polars frames in the analysis timezone."""
         offtake = self.gross_offtake.to_polars(timezone=self.timezone)
@@ -189,8 +335,11 @@ class EveningPeakInput(BaseModel):
 class EveningPeakSummary(BaseModel):
     """The key figures shown under the Avondpieken and Piekaandeel cards.
 
-    All statistics are computed over measured days only. ``daysBelowThreshold`` and
-    ``measuredDays`` are the numerator and denominator of the "49 of 120 days" figure.
+    Share statistics and the day counts are computed over measured days only, that is,
+    days with a reported share. Peak statistics cover every day with a fully measured
+    evening window, which includes days too sparse to report a share.
+    ``daysBelowThreshold`` and ``measuredDays`` are the numerator and denominator of the
+    "49 of 120 days" figure.
     """
 
     average_peak_in_kilowatt: float | None = Field(

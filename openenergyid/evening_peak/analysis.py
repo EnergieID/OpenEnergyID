@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from .schemas import DailyEveningPeakSchema, WeekMedianSchema
+from .schemas import DailyEveningPeakSchema, NetOfftakeSchema, WeekMedianSchema
 
 #: Quarter-hourly energy in kWh multiplied by this gives average power in kW.
 QUARTERS_PER_HOUR = 4
@@ -146,6 +146,13 @@ class EveningPeakAnalyzer:
             raise ValueError(
                 f"window_start ({window_start}) must be strictly before window_end ({window_end})."
             )
+        span = self._minute_of_day(window_end) - self._minute_of_day(window_start)
+        if span % QUARTER_HOUR_MINUTES != 0:
+            raise ValueError(
+                f"The window from window_start ({window_start}) to window_end "
+                f"({window_end}) spans {span} minutes, which is not a whole number of "
+                f"{QUARTER_HOUR_MINUTES}-minute quarter-hours."
+            )
         if not 0 <= peak_share_threshold <= 1:
             raise ValueError(
                 f"peak_share_threshold must be a fraction between 0 and 1, "
@@ -204,6 +211,33 @@ class EveningPeakAnalyzer:
             }
         )
 
+    def _week_spine(self, daily: pl.DataFrame) -> pl.LazyFrame:
+        """A gapless run of Monday-aligned weeks covering the daily spine.
+
+        Mirrors :meth:`_day_spine` one resolution up: ``group_by_dynamic`` only emits
+        buckets that actually contain a row, so an ISO week with no complete day in it
+        would otherwise be silently absent from ``week_medians`` — a step-line chart drawn
+        from it would then run flat straight across an outage that the daily line, thanks
+        to ``_day_spine``, correctly breaks at. Building this from the same range as the
+        (already gapless) daily spine keeps the two series telling the same story.
+        """
+        first_day, last_day = daily.select(
+            pl.col(DAY).min().alias("first"), pl.col(DAY).max().alias("last")
+        ).row(0)
+        first_monday = first_day - dt.timedelta(days=first_day.weekday())
+        last_monday = last_day - dt.timedelta(days=last_day.weekday())
+        return pl.LazyFrame(
+            {
+                WEEK: pl.datetime_range(
+                    first_monday,
+                    last_monday,
+                    interval="1w",
+                    time_zone=self.timezone,
+                    eager=True,
+                )
+            }
+        )
+
     def _in_window(self) -> pl.Expr:
         """Predicate selecting quarter-hours inside the evening window.
 
@@ -250,6 +284,33 @@ class EveningPeakAnalyzer:
             pl.col(TIMESTAMP), pl.col(value_columns[0]).cast(pl.Float64).alias(name)
         )
 
+    @staticmethod
+    def _reject_duplicate_timestamps(frame: pl.LazyFrame, label: str) -> None:
+        """Raise if ``frame`` has more than one row for the same timestamp.
+
+        A public entry point of the class, called directly throughout the test suite and
+        usable independently of :class:`~openenergyid.evening_peak.models.EveningPeakInput`
+        — a caller that never goes through the wire model needs its own guard, not just the
+        model's. Rejecting rather than silently keeping one is deliberate: for a
+        campaign-payout context, discarding one of two conflicting readings for the same
+        quarter-hour is a data-integrity call that should not be made invisibly.
+
+        Only the duplicated rows are collected for the error message, not the whole frame.
+        """
+        duplicated = (
+            frame.filter(pl.col(TIMESTAMP).is_duplicated())
+            .select(TIMESTAMP)
+            .unique()
+            .sort(TIMESTAMP)
+            .collect()
+        )
+        if duplicated.height:
+            example = duplicated[TIMESTAMP][0]
+            raise ValueError(
+                f"{label} has {duplicated.height} repeated timestamp(s) (e.g. "
+                f"{example.isoformat()!r}); each quarter-hour must appear at most once."
+            )
+
     # ------------------------------------------------------------------ step 1
 
     def prepare_net_offtake(
@@ -271,15 +332,30 @@ class EveningPeakAnalyzer:
         -------
         pl.LazyFrame
             ``timestamp`` in the analysis timezone and ``net_offtake_in_kilowatthour``,
-            sorted, with nulls dropped and negatives clipped to zero.
+            sorted, with nulls and non-finite values dropped and negatives clipped to zero.
+
+        Raises
+        ------
+        ValueError
+            If either series has more than one row for the same timestamp.
 
         Notes
         -----
         Clipping happens per quarter-hour, before any summation. A quarter-hour in which
         the connection injects more than it takes counts as zero offtake rather than as
         negative offtake, which is what keeps the daily share inside 0-100%.
+
+        Offtake is authoritative: the result contains exactly offtake's own timestamps.
+        A quarter-hour missing from injection is treated as zero injection (a routine case
+        — a register with gaps, or a connection with no production at all); a quarter-hour
+        present *only* in injection is not part of what is analysed. An outer join here
+        would fabricate a zero-offtake row for such a timestamp, which turns a genuine
+        offtake outage into what looks like a perfect, ultra-low campaign day the moment
+        injection reports anything for that quarter-hour — routine for a no-PV connection,
+        whose injection register still reports zero every quarter.
         """
         offtake = self._localize(self._single_value_column(gross_offtake_lf, "gross_offtake"))
+        self._reject_duplicate_timestamps(offtake, "grossOfftake")
 
         if gross_injection_lf is None:
             net = offtake.with_columns(pl.col("gross_offtake").alias(NET_OFFTAKE))
@@ -287,19 +363,30 @@ class EveningPeakAnalyzer:
             injection = self._localize(
                 self._single_value_column(gross_injection_lf, "gross_injection")
             )
-            net = offtake.join(injection, on=TIMESTAMP, how="full", coalesce=True).with_columns(
-                (
-                    pl.col("gross_offtake").fill_null(0.0)
-                    - pl.col("gross_injection").fill_null(0.0)
-                ).alias(NET_OFFTAKE)
+            # A duplicate here matters even though injection is only the join's
+            # right-hand side: under how="left" it would fan out the matching offtake
+            # row, doubling that quarter-hour's contribution rather than merely
+            # shadowing one of two conflicting values.
+            self._reject_duplicate_timestamps(injection, "grossInjection")
+            net = offtake.join(injection, on=TIMESTAMP, how="left", coalesce=True).with_columns(
+                (pl.col("gross_offtake") - pl.col("gross_injection").fill_null(0.0)).alias(
+                    NET_OFFTAKE
+                )
             )
 
-        return (
+        prepared = (
             net.select(TIMESTAMP, NET_OFFTAKE)
-            .filter(pl.col(TIMESTAMP).is_not_null() & pl.col(NET_OFFTAKE).is_not_null())
+            .filter(
+                pl.col(TIMESTAMP).is_not_null()
+                & pl.col(NET_OFFTAKE).is_not_null()
+                & pl.col(NET_OFFTAKE).is_finite()
+            )
             .with_columns(pl.col(NET_OFFTAKE).clip(lower_bound=0.0))
             .sort(TIMESTAMP)
         )
+        # Stays lazy: pandera only runs value checks on a collected frame, so this adds a
+        # columns/dtypes check on the production path at effectively no cost.
+        return NetOfftakeSchema.validate(prepared)
 
     # ------------------------------------------------------------------ step 2
 
@@ -411,8 +498,14 @@ class EveningPeakAnalyzer:
             )
         )
 
-        week_medians = (
-            daily.filter(pl.col("is_complete"))
+        # Validate eagerly: pandera only runs value checks on a collected frame, and
+        # this is one row per day, so collecting it costs nothing. Collected once here
+        # and reused below, both to build the week spine and for the final result.
+        daily_df = DailyEveningPeakSchema.validate(daily.collect())
+
+        computed_medians = (
+            daily_df.lazy()
+            .filter(pl.col("is_complete"))
             .sort(DAY)
             .group_by_dynamic(DAY, every="1w", start_by="monday")
             .agg(
@@ -424,15 +517,14 @@ class EveningPeakAnalyzer:
                 .alias("median_evening_peak_share_in_percent"),
             )
             .rename({DAY: WEEK})
-            .sort(WEEK)
+        )
+        week_medians = (
+            self._week_spine(daily_df).join(computed_medians, on=WEEK, how="left").sort(WEEK)
         )
 
-        # Validate eagerly: pandera only runs value checks on a collected frame, and
-        # these are one row per day and per week, so collecting them costs nothing.
-        daily = DailyEveningPeakSchema.validate(daily.collect()).lazy()
-        week_medians = WeekMedianSchema.validate(week_medians.collect()).lazy()
+        week_medians_df = WeekMedianSchema.validate(week_medians.collect())
 
-        return EveningPeakAnalysisResult(daily=daily, week_medians=week_medians)
+        return EveningPeakAnalysisResult(daily=daily_df.lazy(), week_medians=week_medians_df.lazy())
 
     # ------------------------------------------------------------------ step 3
 

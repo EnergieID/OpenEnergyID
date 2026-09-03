@@ -157,7 +157,12 @@ class TestInjection:
         )
 
     def test_injection_covering_a_shorter_range_is_treated_as_zero(self):
-        """Missing injection quarter-hours must not drop offtake rows."""
+        """Missing injection quarter-hours must not drop offtake rows.
+
+        This is the *intended* direction of the documented tolerance — injection may
+        report fewer quarter-hours than offtake — and must keep passing unchanged as the
+        regression anchor for it, distinct from the (disallowed) opposite direction below.
+        """
         index = local_quarters(day(2026, 11, 2), 96)
         partial = index[:10]
         _, daily, _ = analyze(
@@ -168,6 +173,45 @@ class TestInjection:
 
         assert row["observed_quarters"] == 96
         assert row["evening_peak_share_in_percent"] == pytest.approx(FLAT_SHARE)
+
+    def test_injection_covering_a_wider_range_does_not_fabricate_offtake(self):
+        """A quarter-hour present only in injection must not become a net-offtake row.
+
+        Offtake is authoritative: the result contains exactly offtake's own timestamps,
+        regardless of what injection additionally reports.
+        """
+        index = local_quarters(day(2026, 11, 2), 96)
+        wider = local_quarters(day(2026, 11, 1), 4 * 96)  # four days, offtake is one
+        _, daily, _ = analyze(
+            frame(index, flat_evening_profile),
+            frame(wider, lambda _: 0.0, name="gross_injection"),
+        )
+
+        assert daily.height == 1
+        assert daily.row(0, named=True)["observed_quarters"] == 96
+
+    def test_offtake_outage_stays_a_gap_even_with_zero_filled_injection(self):
+        """A zero-filled injection register must not paper over a real offtake outage.
+
+        A zero-filled injection register is routine for a connection without PV: it still
+        reports zero every quarter-hour. Before the join-direction fix, that was enough to
+        turn a genuine offtake outage into a suspiciously perfect 0 kW / null-share day
+        rather than the incomplete day it actually is.
+        """
+        measured = [
+            t for t in local_quarters(day(2026, 11, 1), 3 * 96) if t.date() != dt.date(2026, 11, 2)
+        ]
+        full_range = local_quarters(day(2026, 11, 1), 3 * 96)
+        _, daily, _ = analyze(
+            frame(measured, flat_evening_profile),
+            frame(full_range, lambda _: 0.0, name="gross_injection"),
+        )
+        outage = daily.filter(pl.col("day").dt.date() == dt.date(2026, 11, 2)).row(0, named=True)
+
+        assert outage["observed_quarters"] == 0
+        assert outage["is_complete"] is False
+        assert outage["evening_peak_in_kilowatt"] is None
+        assert outage["evening_peak_share_in_percent"] is None
 
 
 class TestCoverage:
@@ -312,6 +356,43 @@ class TestWeekMedians:
             FLAT_PEAK
         )
 
+    def test_a_whole_missing_week_reads_as_a_null_row_not_an_absence(self):
+        """Mirrors TestGaps' daily behaviour one resolution up: a week with no complete
+        day in it must still appear, with null medians, so a step-line chart drawn from
+        this series breaks at the outage instead of running flat across it."""
+        # Two two-week blocks (days 1-14, 29-42) around a two-week outage (15-28), so the
+        # ISO week 2026-11-16 has no data in it at all.
+        days_present = list(range(1, 15)) + list(range(29, 43))
+        index = [
+            timestamp
+            for offset in days_present
+            for timestamp in local_quarters(day(2026, 11, 1) + dt.timedelta(days=offset - 1), 96)
+        ]
+        _, _, result = analyze(frame(index, flat_evening_profile))
+        weeks = result.week_medians.collect()
+
+        assert weeks.height == 7
+        missing_week = weeks.filter(pl.col("week").dt.date() == dt.date(2026, 11, 16))
+        assert missing_week.height == 1
+        assert missing_week.row(0, named=True)["median_evening_peak_in_kilowatt"] is None
+        assert missing_week.row(0, named=True)["median_evening_peak_share_in_percent"] is None
+
+    def test_measured_but_never_complete_data_gives_all_null_weeks_without_crashing(self):
+        """Every day only evening-only (has_full_window True, is_complete False): the
+        spine must still build from the daily range even though no week ever computes
+        a real median."""
+        index = [
+            timestamp
+            for offset in range(10)
+            for timestamp in local_quarters(day(2026, 11, 2, 16, 0) + dt.timedelta(days=offset), 20)
+        ]
+        _, daily, result = analyze(frame(index, flat_evening_profile))
+        weeks = result.week_medians.collect()
+
+        assert not daily["is_complete"].any()
+        assert weeks.height == 2
+        assert weeks["median_evening_peak_in_kilowatt"].null_count() == 2
+
 
 class TestPeakMoments:
     """The Piekmomenten card."""
@@ -438,6 +519,14 @@ class TestConfigurationValidation:
         with pytest.raises(ValueError, match="fraction between 0 and 1"):
             EveningPeakAnalyzer(timezone=TIMEZONE, min_day_coverage=2.0)
 
+    def test_window_must_span_a_whole_number_of_quarter_hours(self):
+        """A 10-minute window would floor expected_window_quarters to 0, making every
+        coverage check on it vacuously true."""
+        with pytest.raises(ValueError, match="not a whole number"):
+            EveningPeakAnalyzer(
+                timezone=TIMEZONE, window_start=dt.time(16, 0), window_end=dt.time(16, 10)
+            )
+
     def test_a_custom_window_changes_the_expected_quarter_count(self):
         analyzer = EveningPeakAnalyzer(
             timezone=TIMEZONE, window_start=dt.time(17, 0), window_end=dt.time(20, 0)
@@ -461,6 +550,56 @@ class TestConfigurationValidation:
         analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
         with pytest.raises(ValueError, match="must have a 'timestamp' column"):
             analyzer.prepare_net_offtake(bad)
+
+
+class TestDuplicateTimestamps:
+    """prepare_net_offtake is a public entry point in its own right, exercised directly
+    throughout this file — it needs its own guard against repeated timestamps, not just
+    EveningPeakInput's."""
+
+    def test_duplicate_offtake_timestamp_is_rejected(self):
+        index = local_quarters(day(2026, 11, 2), 8)
+        duplicated = frame(index + index[:1], flat_evening_profile)
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+
+        with pytest.raises(ValueError, match="grossOfftake has 1 repeated timestamp"):
+            analyzer.prepare_net_offtake(duplicated)
+
+    def test_duplicate_injection_timestamp_is_rejected(self):
+        """Under the how="left" join a duplicate here would fan out the matching offtake
+        row, not just shadow a value, so it needs checking independently of offtake."""
+        index = local_quarters(day(2026, 11, 2), 8)
+        offtake = frame(index, flat_evening_profile)
+        duplicated_injection = frame(index + index[:1], lambda _: 0.0, name="gross_injection")
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+
+        with pytest.raises(ValueError, match="grossInjection has 1 repeated timestamp"):
+            analyzer.prepare_net_offtake(offtake, duplicated_injection)
+
+    def test_a_repeated_timestamp_would_otherwise_double_count_energy(self):
+        """Without the guard, sending the same window twice doubles the reported kWh and
+        can satisfy the full-window coverage check on measurements that were never taken."""
+        index = local_quarters(day(2026, 11, 2, 16, 0), 8)  # 16:00-18:00, 8 quarters
+        duplicated = frame(index + index, lambda _: 0.5)
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+
+        with pytest.raises(ValueError, match="repeated timestamp"):
+            analyzer.prepare_net_offtake(duplicated)
+
+
+class TestNonFiniteValues:
+    """A bare NaN in the wire body must not poison the analysis."""
+
+    def test_nan_is_dropped_not_summed(self):
+        index = local_quarters(day(2026, 11, 2), 4)
+        values = [0.1, float("nan"), 0.3, float("inf")]
+        offtake = frame(index, lambda t: values[index.index(t)])
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+
+        net = analyzer.prepare_net_offtake(offtake).collect()
+
+        assert net.height == 2
+        assert net["net_offtake_in_kilowatthour"].to_list() == pytest.approx([0.1, 0.3])
 
 
 class TestTimezoneHandling:
@@ -598,9 +737,11 @@ class TestGaps:
 class TestPreparedSeriesContract:
     """``prepare_net_offtake`` promises a frame that satisfies ``NetOfftakeSchema``.
 
-    The schema is not validated on the request path — pandera runs no value checks on a
-    LazyFrame, and doing so costs a PerformanceWarning per call — so the promise is
-    asserted here instead.
+    ``NetOfftakeSchema.validate()`` is now wired into ``prepare_net_offtake`` itself, on
+    the production path — it stays lazy there, so it only checks columns and dtypes, not
+    values (pandera runs no value checks on a ``LazyFrame``). This locks the columns/dtype
+    contract in at the boundary; these tests add the value-level checks pandera can't do
+    lazily, by validating the collected result directly.
     """
 
     def test_prepared_series_satisfies_the_schema(self):
@@ -614,6 +755,17 @@ class TestPreparedSeriesContract:
         NetOfftakeSchema.validate(prepared)
         assert prepared["net_offtake_in_kilowatthour"].min() >= 0
         assert prepared.schema["timestamp"].time_zone == TIMEZONE
+
+    def test_prepare_net_offtake_returns_an_already_validated_lazyframe(self):
+        """The schema wiring in prepare_net_offtake must not have been silently dropped,
+        and must not force an eager collect — it should only ever check columns/dtypes."""
+        index = local_quarters(day(2026, 6, 15), 96)
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+        prepared = analyzer.prepare_net_offtake(frame(index, flat_evening_profile))
+
+        assert isinstance(prepared, pl.LazyFrame)
+        # A second pass must be a no-op if the columns/dtypes already match the schema.
+        NetOfftakeSchema.validate(prepared).collect()
 
     def test_prepared_series_is_sorted_and_free_of_nulls(self):
         index = local_quarters(day(2026, 11, 2), 96)
