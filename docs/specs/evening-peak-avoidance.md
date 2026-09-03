@@ -185,7 +185,7 @@ whether the peak was an isolated spike or the top of a long evening.
 
 ## Testing Strategy
 
-`tests/evening_peak/`, 66 tests. Data is synthesised in code from a shared builder in
+`tests/evening_peak/`, 101 tests. Data is synthesised in code from a shared builder in
 `conftest.py` that walks real time and converts back, so DST-affected days come out with the
 right number of quarter-hours.
 
