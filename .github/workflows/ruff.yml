@@ -1,8 +1,28 @@
 name: Ruff
 on: [push, pull_request]
+
+# Ruff is pinned to the same version as the ruff-pre-commit hook in
+# .pre-commit-config.yaml. Without a pin the action installs the latest release,
+# which enables rules the pinned version does not, so code that passes
+# `pre-commit run --all-files` locally fails here for reasons no contributor can
+# see. Bump both together, and only deliberately.
+env:
+  RUFF_VERSION: 0.12.10
+
 jobs:
   ruff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: chartboost/ruff-action@v1
+      - uses: actions/checkout@v4
+      - name: Lint
+        uses: astral-sh/ruff-action@v3
+        with:
+          version: ${{ env.RUFF_VERSION }}
+          args: check
+      # pre-commit also runs ruff-format, so check it here rather than letting
+      # formatting drift until someone else's commit picks it up.
+      - name: Format
+        uses: astral-sh/ruff-action@v3
+        with:
+          version: ${{ env.RUFF_VERSION }}
+          args: format --check
