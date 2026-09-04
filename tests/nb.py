@@ -6,7 +6,7 @@ from nbconvert.preprocessors import ExecutePreprocessor
 
 
 def run_notebook(notebook_path):
-    with open(notebook_path) as f:
+    with open(notebook_path, encoding="utf-8") as f:
         nb = nbformat.read(f, as_version=4)
 
     ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
@@ -23,6 +23,7 @@ def run_notebook(notebook_path):
     "notebook",
     [
         "demo_capacity_analysis.ipynb",
+        "demo_evening_peak.ipynb",
         "demo_dyntar_analysis.ipynb",
         "demo_energiedelen.ipynb",
         "demo_energyid_download.ipynb",
