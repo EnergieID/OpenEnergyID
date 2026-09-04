@@ -146,13 +146,19 @@ class EveningPeakAnalyzer:
             raise ValueError(
                 f"window_start ({window_start}) must be strictly before window_end ({window_end})."
             )
-        span = self._minute_of_day(window_end) - self._minute_of_day(window_start)
-        if span % QUARTER_HOUR_MINUTES != 0:
-            raise ValueError(
-                f"The window from window_start ({window_start}) to window_end "
-                f"({window_end}) spans {span} minutes, which is not a whole number of "
-                f"{QUARTER_HOUR_MINUTES}-minute quarter-hours."
-            )
+        # Checking that each endpoint is itself aligned is stronger than checking the span
+        # is a multiple of 15: it also catches a window like 16:05-21:05, whose span is a
+        # whole number of quarter-hours but which silently selects the same timestamps as
+        # 16:15-21:15, since no real (quarter-hour-aligned) reading can land on :05.
+        for label, value in (("window_start", window_start), ("window_end", window_end)):
+            if (value.minute % QUARTER_HOUR_MINUTES, value.second, value.microsecond) != (
+                0,
+                0,
+                0,
+            ):
+                raise ValueError(
+                    f"{label} ({value}) must fall on a quarter-hour boundary: :00, :15, :30 or :45."
+                )
         if not 0 <= peak_share_threshold <= 1:
             raise ValueError(
                 f"peak_share_threshold must be a fraction between 0 and 1, "
@@ -288,12 +294,13 @@ class EveningPeakAnalyzer:
     def _reject_duplicate_timestamps(frame: pl.LazyFrame, label: str) -> None:
         """Raise if ``frame`` has more than one row for the same timestamp.
 
-        A public entry point of the class, called directly throughout the test suite and
-        usable independently of :class:`~openenergyid.evening_peak.models.EveningPeakInput`
-        — a caller that never goes through the wire model needs its own guard, not just the
-        model's. Rejecting rather than silently keeping one is deliberate: for a
-        campaign-payout context, discarding one of two conflicting readings for the same
-        quarter-hour is a data-integrity call that should not be made invisibly.
+        Called from :meth:`prepare_net_offtake`, which is a public entry point of the
+        class used directly throughout the test suite and usable independently of
+        :class:`~openenergyid.evening_peak.models.EveningPeakInput` — a caller that never
+        goes through the wire model needs its own guard here, not just the model's.
+        Rejecting rather than silently keeping one is deliberate: for a campaign-payout
+        context, discarding one of two conflicting readings for the same quarter-hour is a
+        data-integrity call that should not be made invisibly.
 
         Only the duplicated rows are collected for the error message, not the whole frame.
         """
@@ -384,8 +391,11 @@ class EveningPeakAnalyzer:
             .with_columns(pl.col(NET_OFFTAKE).clip(lower_bound=0.0))
             .sort(TIMESTAMP)
         )
-        # Stays lazy: pandera only runs value checks on a collected frame, so this adds a
-        # columns/dtypes check on the production path at effectively no cost.
+        # The duplicate-timestamp guards above each already collected once (bounded to the
+        # duplicated rows, not the whole frame); this step adds no further collect of its
+        # own. pandera only runs value checks on a collected frame, so validating this
+        # still-lazy frame only checks columns/dtypes, at effectively no added cost — and
+        # the caller still receives a LazyFrame to chain further lazy work onto.
         return NetOfftakeSchema.validate(prepared)
 
     # ------------------------------------------------------------------ step 2

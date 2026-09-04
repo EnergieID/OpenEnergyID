@@ -97,11 +97,18 @@ class TestInput:
         with pytest.raises(ValidationError, match="strictly before"):
             EveningPeakInput.model_validate(payload(1, windowStart="21:00", windowEnd="16:00"))
 
-    def test_window_not_a_multiple_of_fifteen_minutes_is_rejected(self):
+    def test_window_end_not_on_a_quarter_hour_boundary_is_rejected(self):
         """A 10-minute window would floor expected_window_quarters to 0, making every
         coverage check on it vacuously true."""
-        with pytest.raises(ValidationError, match="not a whole number"):
+        with pytest.raises(ValidationError, match="quarter-hour boundary"):
             EveningPeakInput.model_validate(payload(1, windowStart="16:00", windowEnd="16:10"))
+
+    def test_window_start_not_on_a_quarter_hour_boundary_is_rejected(self):
+        """A window whose span is a whole number of quarter-hours can still start off the
+        grid: 16:05-21:05 would otherwise silently behave like 16:15-21:15, since no real
+        quarter-hour-aligned reading can land on :05."""
+        with pytest.raises(ValidationError, match="windowStart.*quarter-hour boundary"):
+            EveningPeakInput.model_validate(payload(1, windowStart="16:05", windowEnd="21:05"))
 
     def test_custom_quarter_hour_window_is_accepted(self):
         model = EveningPeakInput.model_validate(payload(1, windowStart="17:00", windowEnd="20:00"))
@@ -157,6 +164,11 @@ class TestMeasurementGrid:
     is checked as well. The two catch different things: data shifted off the true grid
     but still 15 minutes apart passes density and fails alignment; hourly/half-hourly data
     passes alignment and fails density.
+
+    Density applies to grossOfftake only: grossInjection's own field description promises
+    to accept a sparse or non-contiguous set of quarter-hours, which a density check on
+    that series would directly contradict. Alignment, uniqueness, finiteness and
+    non-negativity still apply to both.
     """
 
     def test_genuine_quarter_hourly_data_with_a_gap_passes(self):
@@ -284,6 +296,57 @@ class TestMeasurementGrid:
     def test_single_timestamp_has_no_gap_to_measure(self):
         index = local_quarters(day(2026, 11, 2), 1)
         EveningPeakInput.model_validate({"timeZone": TIMEZONE, "grossOfftake": series_at(index)})
+
+    def test_sparse_injection_is_accepted(self):
+        """Density does not apply to grossInjection: a sparse, non-contiguous injection
+        register is exactly what the field description promises to tolerate, and a
+        density check there would reject exactly that."""
+        index = local_quarters(day(2026, 11, 2), 96)
+        sparse = [aware(day(2026, 11, 2, 10)), aware(day(2026, 11, 2, 13))]  # 3 hours apart
+        model = EveningPeakInput.model_validate(
+            {
+                "timeZone": TIMEZONE,
+                "grossOfftake": series_at(index),
+                "grossInjection": series_at(sparse, lambda _: 0.05),
+            }
+        )
+        assert model.gross_injection is not None
+        assert len(model.gross_injection.index) == 2
+
+    def test_hourly_injection_is_accepted_but_hourly_offtake_is_not(self):
+        """Density is scoped to grossOfftake: a mismatched-interval integration bug shows
+        up on offtake regardless, since a real export pipeline sends both registers at
+        the same interval."""
+        offtake_index = local_quarters(day(2026, 11, 2), 96)
+        hourly_injection = [aware(day(2026, 11, 2, hour)) for hour in range(24)]
+        model = EveningPeakInput.model_validate(
+            {
+                "timeZone": TIMEZONE,
+                "grossOfftake": series_at(offtake_index),
+                "grossInjection": series_at(hourly_injection, lambda _: 0.0),
+            }
+        )
+        assert model.gross_injection is not None
+        assert len(model.gross_injection.index) == 24
+
+    def test_negative_offtake_value_is_rejected(self):
+        """A negative value is silently clipped to zero downstream, which quietly lowers
+        that day's share rather than rejecting the malformed request."""
+        body = payload(1)
+        body["grossOfftake"]["data"][3] = -2.0
+        with pytest.raises(ValidationError, match="grossOfftake.*negative"):
+            EveningPeakInput.model_validate(body)
+
+    def test_negative_injection_value_is_rejected(self):
+        body = payload(1)
+        body["grossInjection"]["data"][3] = -0.5
+        with pytest.raises(ValidationError, match="grossInjection.*negative"):
+            EveningPeakInput.model_validate(body)
+
+    def test_zero_is_not_negative(self):
+        body = payload(1)
+        body["grossOfftake"]["data"][3] = 0.0
+        EveningPeakInput.model_validate(body)
 
 
 class TestOutput:

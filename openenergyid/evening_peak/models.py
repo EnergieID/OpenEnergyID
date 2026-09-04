@@ -42,22 +42,27 @@ class EveningPeakInput(BaseModel):
     gross_offtake: TimeSeries = Field(
         alias="grossOfftake",
         description=(
-            "Gross offtake from the grid, in kWh per quarter-hour, non-negative. "
-            "Timestamps label the start of each interval, must carry a UTC offset, and "
-            "must fall on a quarter-hour boundary with no repeats. This analysis is built "
-            "for 15-minute data only; coarser or finer intervals are rejected."
+            "Gross offtake from the grid, in kWh per quarter-hour, non-negative and "
+            "finite. Timestamps label the start of each interval, must carry a UTC "
+            "offset, must fall on a quarter-hour boundary with no repeats, and must be "
+            "genuinely 15-minute data: the smallest gap between any two present "
+            "timestamps must be exactly 15 minutes, so coarser (hourly, half-hourly) or "
+            "finer intervals are rejected."
         ),
     )
     gross_injection: TimeSeries | None = Field(
         default=None,
         alias="grossInjection",
         description=(
-            "Gross injection into the grid, in kWh per quarter-hour, non-negative, under "
-            "the same timestamp rules as grossOfftake. Omit for a connection without "
-            "production; net offtake then equals gross offtake. May report fewer "
-            "quarter-hours than grossOfftake: missing quarter-hours are treated as zero "
-            "injection. A quarter-hour present only in grossInjection is ignored — "
-            "grossOfftake defines which quarter-hours are analysed."
+            "Gross injection into the grid, in kWh per quarter-hour, non-negative and "
+            "finite, on the same quarter-hour grid as grossOfftake — timezone-aware, "
+            "aligned, no repeats — but not required to be as densely sampled: unlike "
+            "grossOfftake, a sparse or non-contiguous set of quarter-hours is accepted. "
+            "Omit for a connection without production; net offtake then equals gross "
+            "offtake. May report fewer quarter-hours than grossOfftake, in any pattern: "
+            "missing quarter-hours are treated as zero injection. A quarter-hour present "
+            "only in grossInjection is ignored — grossOfftake defines which quarter-hours "
+            "are analysed."
         ),
     )
     timezone: str = Field(
@@ -145,26 +150,29 @@ class EveningPeakInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_window(self) -> Self:
-        """The window must be a non-empty, forward interval spanning whole quarter-hours.
+        """The window must be a non-empty interval of aligned quarter-hour boundaries.
 
         A span that floors to zero quarter-hours (e.g. a 10-minute window) would make
-        ``expected_window_quarters`` zero and every coverage check vacuously true; a span
-        that is not a whole number of quarter-hours is off by one in the other direction.
+        ``expected_window_quarters`` zero and every coverage check vacuously true. A span
+        that is a whole number of quarter-hours but starts off the grid is a subtler
+        version of the same problem: no real (quarter-hour-aligned) timestamp can fall
+        exactly on an unaligned boundary, so e.g. 16:05-21:05 silently selects the same
+        timestamps as 16:15-21:15 without saying so — checking the span alone misses this.
         """
         if self.window_start >= self.window_end:
             raise ValueError(
                 f"windowStart ({self.window_start}) must be strictly before "
                 f"windowEnd ({self.window_end})."
             )
-        start_minutes = self.window_start.hour * 60 + self.window_start.minute
-        end_minutes = self.window_end.hour * 60 + self.window_end.minute
-        span = end_minutes - start_minutes
-        if span % QUARTER_HOUR_MINUTES != 0:
-            raise ValueError(
-                f"The window from windowStart ({self.window_start}) to windowEnd "
-                f"({self.window_end}) spans {span} minutes, which is not a whole number "
-                f"of {QUARTER_HOUR_MINUTES}-minute quarter-hours."
-            )
+        for label, value in (("windowStart", self.window_start), ("windowEnd", self.window_end)):
+            if (value.minute % QUARTER_HOUR_MINUTES, value.second, value.microsecond) != (
+                0,
+                0,
+                0,
+            ):
+                raise ValueError(
+                    f"{label} ({value}) must fall on a quarter-hour boundary: :00, :15, :30 or :45."
+                )
         return self
 
     @model_validator(mode="after")
@@ -204,7 +212,7 @@ class EveningPeakInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_measurement_grid(self) -> Self:
-        """Everything the analysis assumes about the timestamps, checked for real.
+        """Everything the analysis assumes about the timestamps and values, checked for real.
 
         Declared after :meth:`validate_series_lengths` deliberately: pydantic stops at the
         first ``mode="after"`` validator that raises, so if this one ran first on a
@@ -217,43 +225,63 @@ class EveningPeakInput(BaseModel):
           further down the pipeline, which is a plausible wrong answer, not an error)
         - every timestamp falls on a quarter-hour boundary (``:00``, ``:15``, ``:30`` or
           ``:45``, no seconds or microseconds)
-        - the *minimum* gap between consecutive present timestamps is exactly 15 minutes
-
-        The last two together are what make "PT15M and nothing else" a checked contract
-        rather than an assumption. Alignment alone is not enough: hourly data lands on
-        ``:00`` every time, which trivially satisfies "on a quarter-hour boundary," so an
-        alignment-only check would let hourly data through to produce a wall of
-        incomplete, null-heavy days with no indication of why. The minimum-gap check
-        catches that — genuine quarter-hourly data always has *some* pair of consecutive
-        readings 15 minutes apart, even when the series has gaps elsewhere, so a series
-        whose minimum gap is 30 or 60 minutes is not quarter-hourly at all. A series with
-        fewer than two timestamps has no gap to measure and is let through: there is too
-        little data to judge an interval from, and the existing coverage logic already
-        handles a sparse day gracefully.
-
         - no timestamp repeats within the series
-        - every value is finite (``None`` is a legitimate gap; ``NaN``/``inf`` are not,
-          and ``is_not_null()`` downstream does not catch a ``NaN``)
+        - every value is finite and non-negative (``None`` is a legitimate gap; ``NaN``,
+          ``inf`` and negative values are not — ``is_not_null()`` downstream does not
+          catch a ``NaN``, and a negative value is silently clipped to zero by
+          :meth:`~openenergyid.evening_peak.analysis.EveningPeakAnalyzer.prepare_net_offtake`,
+          which quietly lowers that day's share rather than rejecting the request)
+
+        Only ``grossOfftake`` additionally requires the *minimum* gap between consecutive
+        present timestamps to be exactly 15 minutes. Alignment alone is not enough to make
+        "PT15M and nothing else" a checked contract: hourly data lands on ``:00`` every
+        time, which trivially satisfies "on a quarter-hour boundary," so an alignment-only
+        check would let hourly data through to produce a wall of incomplete, null-heavy
+        days with no indication of why. The minimum-gap check catches that — genuine
+        quarter-hourly data always has *some* pair of consecutive readings 15 minutes
+        apart, even when the series has gaps elsewhere, so a series whose minimum gap is
+        30 or 60 minutes is not quarter-hourly at all. A series with fewer than two
+        timestamps has no gap to measure and is let through: there is too little data to
+        judge an interval from, and the existing coverage logic already handles a sparse
+        day gracefully.
+
+        This check does *not* apply to ``grossInjection``: its own field description
+        promises to accept fewer measured quarter-hours than ``grossOfftake``, including a
+        sparse, non-contiguous pattern, and a real connection's injection register would
+        be sparse rather than sampled at some other fixed interval — so a minimum-gap
+        check there would reject exactly what the tolerance is meant to allow. Alignment
+        still applies to injection: a present reading must be on the grid, just not every
+        grid point. A connection whose whole export pipeline runs at the wrong interval
+        sends both registers at that interval, so ``grossOfftake``'s check alone still
+        catches a mismatched-interval integration bug.
 
         All violations found, across both series, are collected and raised together, so a
         caller sees every problem in one round trip instead of fixing and resubmitting
         repeatedly.
         """
         problems: list[str] = []
-        for alias, series in (
-            ("grossOfftake", self.gross_offtake),
-            ("grossInjection", self.gross_injection),
-        ):
-            if series is None:
-                continue
-            problems.extend(self._measurement_grid_problems(alias, series))
+        problems.extend(
+            self._measurement_grid_problems("grossOfftake", self.gross_offtake, check_density=True)
+        )
+        if self.gross_injection is not None:
+            problems.extend(
+                self._measurement_grid_problems(
+                    "grossInjection", self.gross_injection, check_density=False
+                )
+            )
         if problems:
             raise ValueError(" ".join(problems))
         return self
 
     @staticmethod
-    def _measurement_grid_problems(alias: str, series: TimeSeries) -> list[str]:
-        """The specific grid violations found in one series, as human-readable sentences."""
+    def _measurement_grid_problems(
+        alias: str, series: TimeSeries, *, check_density: bool
+    ) -> list[str]:
+        """The specific grid violations found in one series, as human-readable sentences.
+
+        ``check_density`` is False for ``grossInjection``: see
+        :meth:`validate_measurement_grid` for why that check does not apply there.
+        """
         problems: list[str] = []
         index = series.index
         data = series.data
@@ -283,7 +311,7 @@ class EveningPeakInput(BaseModel):
         # check — which needs a total ordering across the whole series — is skipped
         # whenever any naive timestamp is present. The naive violation above is enough to
         # reject the request; density can be assessed once the caller fixes that.
-        if not naive:
+        if check_density and not naive:
             ordered = sorted(set(index))
             if len(ordered) >= 2:
                 gaps_in_minutes = [
@@ -317,6 +345,13 @@ class EveningPeakInput(BaseModel):
             problems.append(
                 f"{alias} has {len(non_finite)} non-finite value(s) (NaN or infinity); "
                 "values must be finite."
+            )
+
+        negative = [value for value in data if value is not None and value < 0]
+        if negative:
+            problems.append(
+                f"{alias} has {len(negative)} negative value(s) (e.g. {min(negative)!r}); "
+                "values must be non-negative."
             )
 
         return problems

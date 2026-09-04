@@ -519,12 +519,20 @@ class TestConfigurationValidation:
         with pytest.raises(ValueError, match="fraction between 0 and 1"):
             EveningPeakAnalyzer(timezone=TIMEZONE, min_day_coverage=2.0)
 
-    def test_window_must_span_a_whole_number_of_quarter_hours(self):
+    def test_window_end_not_on_a_quarter_hour_boundary_is_rejected(self):
         """A 10-minute window would floor expected_window_quarters to 0, making every
         coverage check on it vacuously true."""
-        with pytest.raises(ValueError, match="not a whole number"):
+        with pytest.raises(ValueError, match="quarter-hour boundary"):
             EveningPeakAnalyzer(
                 timezone=TIMEZONE, window_start=dt.time(16, 0), window_end=dt.time(16, 10)
+            )
+
+    def test_window_start_not_on_a_quarter_hour_boundary_is_rejected(self):
+        """A span that is a whole number of quarter-hours can still start off the grid:
+        16:05-21:05 would otherwise silently behave like 16:15-21:15."""
+        with pytest.raises(ValueError, match="window_start.*quarter-hour boundary"):
+            EveningPeakAnalyzer(
+                timezone=TIMEZONE, window_start=dt.time(16, 5), window_end=dt.time(21, 5)
             )
 
     def test_a_custom_window_changes_the_expected_quarter_count(self):
