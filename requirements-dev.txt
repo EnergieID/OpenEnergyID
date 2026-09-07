@@ -74,8 +74,11 @@ decorator==5.2.1
 defusedxml==0.7.1
     # via nbconvert
 deptry==0.23.0
+energy-cost==0.8.2
+    # via openenergyid
 energyid==0.0.17
-entsoe-py==0.6.19
+entsoe-py==0.8.1
+    # via energy-cost
 executing==2.2.0
     # via stack-data
 fastjsonschema==2.21.1
@@ -119,6 +122,8 @@ ipython-pygments-lexers==1.1.1
     # via ipython
 ipywidgets==8.1.7
     # via jupyter
+isodate==0.7.2
+    # via energy-cost
 isoduration==20.11.0
     # via jsonschema
 jedi==0.19.2
@@ -232,7 +237,20 @@ notebook-shim==0.2.4
     # via
     #   jupyterlab
     #   notebook
-numpy==2.2.6
+numpy==2.2.6 ; python_full_version < '3.14'
+    # via
+    #   contourpy
+    #   h5py
+    #   matplotlib
+    #   pandas
+    #   pandas-stubs
+    #   patsy
+    #   pvlib
+    #   scikit-learn
+    #   scipy
+    #   seaborn
+    #   statsmodels
+numpy==2.5.3 ; python_full_version >= '3.14'
     # via
     #   contourpy
     #   h5py
@@ -264,10 +282,12 @@ packaging==25.0
     #   requirements-parser
     #   statsmodels
     #   vegafusion
-pandas==2.2.3
+pandas==3.0.5
     # via
+    #   energy-cost
     #   energyid
     #   entsoe-py
+    #   openenergyid
     #   pvlib
     #   seaborn
     #   statsmodels
@@ -322,6 +342,7 @@ pycparser==2.22
     # via cffi
 pydantic==2.11.5
     # via
+    #   energy-cost
     #   openenergyid
     #   pandera
 pydantic-core==2.33.2
@@ -348,7 +369,6 @@ python-json-logger==3.3.0
 pytz==2025.2
     # via
     #   entsoe-py
-    #   pandas
     #   pvlib
 pywin32==310 ; platform_python_implementation != 'PyPy' and sys_platform == 'win32'
     # via
@@ -359,8 +379,12 @@ pywinpty==2.0.15 ; os_name == 'nt'
     #   jupyter-server
     #   jupyter-server-terminals
     #   terminado
+pyxlsb==1.0.10
+    # via energy-cost
 pyyaml==6.0.2
-    # via jupyter-events
+    # via
+    #   energy-cost
+    #   jupyter-events
 pyzmq==26.4.0
     # via
     #   ipykernel
@@ -395,7 +419,12 @@ rpds-py==0.25.1
     #   referencing
 scikit-learn==1.8.0
     # via openenergyid
-scipy==1.15.3
+scipy==1.15.3 ; python_full_version < '3.14'
+    # via
+    #   pvlib
+    #   scikit-learn
+    #   statsmodels
+scipy==1.18.1 ; python_full_version >= '3.14'
     # via
     #   pvlib
     #   scikit-learn
@@ -476,7 +505,7 @@ typing-inspect==0.9.0
     # via pandera
 typing-inspection==0.4.1
     # via pydantic
-tzdata==2025.2
+tzdata==2025.2 ; sys_platform == 'emscripten' or sys_platform == 'win32'
     # via pandas
 uri-template==1.3.0
     # via jsonschema

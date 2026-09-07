@@ -10,10 +10,16 @@ annotated-types==0.7.0
     # via pydantic
 attrs==25.3.0
     # via aiohttp
+beautifulsoup4==4.13.4
+    # via entsoe-py
 certifi==2025.4.26
     # via requests
 charset-normalizer==3.4.2
     # via requests
+energy-cost==0.8.2
+    # via openenergyid
+entsoe-py==0.8.1
+    # via energy-cost
 frozenlist==1.7.0
     # via
     #   aiohttp
@@ -24,6 +30,8 @@ idna==3.10
     # via
     #   requests
     #   yarl
+isodate==0.7.2
+    # via energy-cost
 joblib==1.5.3
     # via scikit-learn
 multidict==6.6.4
@@ -32,7 +40,16 @@ multidict==6.6.4
     #   yarl
 mypy-extensions==1.1.0
     # via typing-inspect
-numpy==2.2.6
+numpy==2.2.6 ; python_full_version < '3.14'
+    # via
+    #   h5py
+    #   pandas
+    #   patsy
+    #   pvlib
+    #   scikit-learn
+    #   scipy
+    #   statsmodels
+numpy==2.5.3 ; python_full_version >= '3.14'
     # via
     #   h5py
     #   pandas
@@ -45,8 +62,11 @@ packaging==25.0
     # via
     #   pandera
     #   statsmodels
-pandas==2.2.3
+pandas==3.0.5
     # via
+    #   energy-cost
+    #   entsoe-py
+    #   openenergyid
     #   pvlib
     #   statsmodels
 pandera==0.24.0
@@ -63,6 +83,7 @@ pvlib==0.13.0
     # via openenergyid
 pydantic==2.11.5
     # via
+    #   energy-cost
     #   openenergyid
     #   pandera
 pydantic-core==2.33.2
@@ -71,21 +92,33 @@ python-dateutil==2.9.0.post0
     # via pandas
 pytz==2025.2
     # via
-    #   pandas
+    #   entsoe-py
     #   pvlib
+pyxlsb==1.0.10
+    # via energy-cost
+pyyaml==6.0.2
+    # via energy-cost
 requests==2.32.3
     # via
+    #   entsoe-py
     #   openenergyid
     #   pvlib
 scikit-learn==1.8.0
     # via openenergyid
-scipy==1.15.3
+scipy==1.15.3 ; python_full_version < '3.14'
+    # via
+    #   pvlib
+    #   scikit-learn
+    #   statsmodels
+scipy==1.18.1 ; python_full_version >= '3.14'
     # via
     #   pvlib
     #   scikit-learn
     #   statsmodels
 six==1.17.0
     # via python-dateutil
+soupsieve==2.7
+    # via beautifulsoup4
 statsmodels==0.14.4
     # via openenergyid
 threadpoolctl==3.6.0
@@ -95,6 +128,7 @@ typeguard==4.4.2
 typing-extensions==4.14.0
     # via
     #   aiosignal
+    #   beautifulsoup4
     #   pandera
     #   pydantic
     #   pydantic-core
@@ -105,7 +139,7 @@ typing-inspect==0.9.0
     # via pandera
 typing-inspection==0.4.1
     # via pydantic
-tzdata==2025.2
+tzdata==2025.2 ; sys_platform == 'emscripten' or sys_platform == 'win32'
     # via pandas
 urllib3==2.4.0
     # via requests

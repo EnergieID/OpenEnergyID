@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Annotated, Self
+from typing import TYPE_CHECKING, Annotated, Self
 
 import pandas as pd
 from aiohttp import ClientSession
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from ..cost.models import CostSummary
 
 
 class SimulationInputAbstract(BaseModel):
@@ -21,6 +24,16 @@ class SimulationSummary(BaseModel):
     comparison: Annotated[
         dict, Field(description="Comparison between ex-ante and ex-post results.")
     ]
+    cost: Annotated[
+        "CostSummary | None",
+        Field(
+            default=None,
+            description=(
+                "Contract-based cost of the simulation before and after, with the "
+                "savings breakdown. Present only when a tariff contract was supplied."
+            ),
+        ),
+    ] = None
 
 
 class Simulator(ABC):
@@ -61,3 +74,12 @@ class Simulator(ABC):
         Asynchronously load any required resources using the provided session.
         """
         raise NotImplementedError()
+
+
+# Resolve the forward reference on SimulationSummary.cost. The cost models live in
+# openenergyid.cost, which does not import abstractsim, so this is safe to do eagerly.
+from ..cost.models import (  # noqa: E402  pylint: disable=wrong-import-position
+    CostSummary,
+)
+
+SimulationSummary.model_rebuild()
