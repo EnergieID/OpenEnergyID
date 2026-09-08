@@ -132,16 +132,6 @@ def check_indexes(contract: Contract | ContractHistory, end: dt.datetime) -> lis
     return warnings
 
 
-def _is_on_boundary(moment: dt.datetime, freq: str) -> bool:
-    """Whether ``moment`` sits exactly on a ``freq`` boundary."""
-    try:
-        return pd.Timestamp(moment).floor(freq) == pd.Timestamp(moment)
-    except ValueError:
-        # Non-fixed frequencies (MS, YS) cannot be floored; compare against the offset.
-        offset = pd.tseries.frequencies.to_offset(freq)
-        return bool(offset.is_on_offset(pd.Timestamp(moment)))
-
-
 def check_period(
     contract: Contract | ContractHistory,
     start: dt.datetime,
@@ -153,20 +143,9 @@ def check_period(
     freq = to_pandas_freq(output_resolution)
     span = pd.Timestamp(end) - pd.Timestamp(start)
 
-    if not (_is_on_boundary(start, freq) and _is_on_boundary(end, freq)):
-        warnings.append(
-            CostWarning(
-                code=CostWarningCode.PARTIAL_BILLING_PERIOD,
-                message=(
-                    f"The period {start.isoformat()} to {end.isoformat()} does not align "
-                    f"with the {isodate.duration_isoformat(output_resolution)} billing "
-                    "resolution. Fixed and capacity charges are billed for the whole "
-                    "snapped period, so absolute totals are inflated; the before/after "
-                    "comparison is unaffected."
-                ),
-                context={"start": start.isoformat(), "end": end.isoformat()},
-            )
-        )
+    # Boundary alignment is not warned about here: compute_cost shrinks the window to
+    # whole billing periods before this runs, and emits PARTIAL_BILLING_PERIOD naming
+    # exactly what it excluded.
 
     period_length = (
         pd.Timestamp(start) + pd.tseries.frequencies.to_offset(freq) - pd.Timestamp(start)

@@ -95,10 +95,11 @@ class TestCheckPeriod:
         contract = make_contract()
         assert check_period(contract, _at(2024, 1), _at(2025, 1), MONTH) == []
 
-    def test_warns_on_a_partial_month(self) -> None:
+    def test_does_not_warn_about_boundary_alignment(self) -> None:
+        """compute_cost owns that warning; it shrinks the window before this runs."""
         contract = make_contract()
         codes = [w.code for w in check_period(contract, _at(2024, 1, 5), _at(2024, 3, 12), MONTH)]
-        assert CostWarningCode.PARTIAL_BILLING_PERIOD in codes
+        assert CostWarningCode.PARTIAL_BILLING_PERIOD not in codes
 
     def test_warns_when_shorter_than_one_billing_period(self) -> None:
         contract = make_contract()

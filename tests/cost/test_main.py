@@ -169,3 +169,55 @@ class TestCompareCosts:
         after, _ = compute_cost(cheaper, _settings())
 
         assert compare_costs(before, after).diff["total"] < 0
+
+
+class TestWholeBillingPeriods:
+    """Cost only the billing periods the data covers completely.
+
+    ``Tariff.apply`` snaps the window outward to whole periods and ``energy_cost`` masks
+    any period containing a gap, so data ending mid-month would otherwise leave the last
+    period -- and the grand total -- as NaN.
+    """
+
+    def test_data_ending_mid_period_still_yields_a_total(self) -> None:
+        # 92 days from 1 Jan ends on 2 April, an hour into April's billing period.
+        frame = make_frame(periods=96 * 92)
+        result, warnings = compute_cost(frame, _settings())
+
+        assert result.total is not None
+        assert not math.isnan(result.total)
+        assert result.periods is not None
+        assert len(result.periods.index) == 3, "January through March"
+
+    def test_the_excluded_period_is_reported(self) -> None:
+        frame = make_frame(periods=96 * 92)
+        _, warnings = compute_cost(frame, _settings())
+
+        partial = [w for w in warnings if w.code == CostWarningCode.PARTIAL_BILLING_PERIOD]
+        assert len(partial) == 1
+        context = partial[0].context
+        assert context["costed_end"] < context["data_end"]
+
+    def test_data_starting_mid_period_drops_the_first_period(self) -> None:
+        frame = make_frame(start="2024-01-15", periods=96 * 78)
+        result, _ = compute_cost(frame, _settings())
+
+        assert result.start is not None
+        assert result.start.day == 1
+        assert result.start.month == 2, "January is incomplete, so it is excluded"
+
+    def test_a_window_on_exact_boundaries_is_untouched(self, year_frame) -> None:
+        result, warnings = compute_cost(year_frame, _settings())
+
+        assert len(result.periods.index) == 12
+        assert not [w for w in warnings if w.code == CostWarningCode.PARTIAL_BILLING_PERIOD]
+
+    def test_a_sub_period_window_is_costed_anyway_with_a_warning(self) -> None:
+        """Under one whole billing period there is nothing to shrink to."""
+        frame = make_frame(start="2024-01-05", periods=96 * 15)
+        result, warnings = compute_cost(frame, _settings())
+
+        codes = {w.code for w in warnings}
+        assert CostWarningCode.PARTIAL_BILLING_PERIOD in codes
+        # The window is left as the data's own, not silently emptied.
+        assert result.start.day == 5
