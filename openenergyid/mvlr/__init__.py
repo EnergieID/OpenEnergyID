@@ -2,6 +2,7 @@
 
 from .main import find_best_mvlr
 from .models import (
+    DegenerateModelError,
     IndependentVariableInput,
     IndependentVariableResult,
     MultiVariableRegressionInput,
@@ -10,10 +11,11 @@ from .models import (
 )
 
 __all__ = [
+    "DegenerateModelError",
     "find_best_mvlr",
     "IndependentVariableInput",
+    "IndependentVariableResult",
     "MultiVariableRegressionInput",
     "MultiVariableRegressionResult",
     "ValidationParameters",
-    "IndependentVariableResult",
 ]
