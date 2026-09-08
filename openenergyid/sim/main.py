@@ -49,6 +49,13 @@ PRICE_COLUMNS = (
 )
 
 
+def _conflicting_cost_columns(cost: ContractCostSettings | None, columns: list[str]) -> list[str]:
+    """Price columns that clash with a contract-based `cost` setting, if any."""
+    if cost is None:
+        return []
+    return sorted(set(PRICE_COLUMNS) & set(columns))
+
+
 class FullSimulationInput(BaseModel):
     """Full input for running a simulation analysis."""
 
@@ -73,9 +80,7 @@ class FullSimulationInput(BaseModel):
     @model_validator(mode="after")
     def _reject_conflicting_cost_inputs(self) -> "FullSimulationInput":
         """Refuse to guess which of two cost mechanisms the caller meant."""
-        if self.cost is None:
-            return self
-        clash = sorted(set(PRICE_COLUMNS) & set(self.ex_ante_data.columns))
+        clash = _conflicting_cost_columns(self.cost, self.ex_ante_data.columns)
         if clash:
             raise ValueError(
                 "Conflicting cost inputs: `cost` supplies a tariff contract while "
@@ -157,6 +162,16 @@ async def run_simulation(
 
     cost = None
     if input_.cost is not None:
+        # Re-check for a clash: ex_ante_data.columns is a plain mutable list, so the
+        # model_validator that ran at construction time may no longer hold by now.
+        clash = _conflicting_cost_columns(input_.cost, input_.ex_ante_data.columns)
+        if clash:
+            raise ValueError(
+                "Conflicting cost inputs: `cost` supplies a tariff contract while "
+                f"ex_ante_data also carries price columns {clash}. Pick one mechanism: "
+                "remove the price columns to use contract-based costing, or drop `cost` "
+                "to use per-interval prices."
+            )
         # Contract costing is synchronous, CPU-bound pandas work; keep it off the loop.
         cost = await asyncio.to_thread(cost_simulation, frames, input_.cost)
 

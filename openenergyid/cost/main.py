@@ -39,7 +39,7 @@ def _build_breakdown(frame: pd.DataFrame) -> CostBreakdown:
         if len(parts) != 3:
             continue
         category, cost_group, cost_type = parts
-        total = frame[column].sum()
+        total = frame[column].sum(skipna=False)
         breakdown.setdefault(category, {}).setdefault(cost_group, {})[cost_type] = (
             None if pd.isna(total) else float(total)
         )
@@ -109,7 +109,7 @@ def compute_cost(
     if not total_columns:
         raise CostCalculationError("Cost result carries no grand total column.")
     total_series = frame[total_columns[0]]
-    total = total_series.sum()
+    total = total_series.sum(skipna=False)
 
     if pd.isna(total):
         warnings.append(
@@ -136,10 +136,10 @@ def compute_cost(
 def compare_costs(before: CostResult, after: CostResult) -> CostComparison:
     """Compare two cost results.
 
-    ``diff = after - before``, so savings are negative -- the same convention as
-    ``openenergyid.simeval.compare_results``. ``ratio_diff`` is ``None`` wherever the
-    baseline is zero or missing, never ``inf`` or ``nan``, because the result has to
-    survive JSON serialization.
+    ``diff = after - before``, so savings are negative -- the same sign convention as
+    ``openenergyid.simeval.compare_results``. Unlike ``simeval.compare_results``,
+    ``ratio_diff`` is deliberately ``None`` wherever the baseline is zero or missing,
+    never ``inf`` or ``nan``, because the result has to survive JSON serialization.
     """
     flat_before = _flatten_totals(before)
     flat_after = _flatten_totals(after)

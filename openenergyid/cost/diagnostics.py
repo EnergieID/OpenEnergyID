@@ -93,14 +93,22 @@ def check_indexes(contract: Contract | ContractHistory, end: dt.datetime) -> lis
 
         covered_until = pd.Timestamp(frame["timestamp"].max())
         resolution = getattr(index, "resolution", None)
-        if isinstance(resolution, dt.timedelta):
-            covered_until = covered_until + resolution
+        if isinstance(resolution, (dt.timedelta, isodate.Duration)):
+            covered_until = pd.Timestamp(covered_until + resolution)
 
         end_ts = pd.Timestamp(end)
-        if covered_until.tzinfo is None or end_ts.tzinfo is None:
+        if covered_until.tzinfo is None and end_ts.tzinfo is None:
+            pass  # both naive: directly comparable, nothing to convert.
+        elif covered_until.tzinfo is None or end_ts.tzinfo is None:
+            logger.warning(
+                "Cannot check coverage for price index '%s': timestamps are only "
+                "partially timezone-aware.",
+                name,
+            )
             continue
-        # Report both moments in the same zone, so the message reads coherently.
-        covered_until = covered_until.tz_convert(end_ts.tz)
+        else:
+            # Report both moments in the same zone, so the message reads coherently.
+            covered_until = covered_until.tz_convert(end_ts.tz)
         if covered_until < end_ts:
             message = (
                 f"Price index '{name}' has data only until "

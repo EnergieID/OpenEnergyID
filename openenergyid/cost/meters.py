@@ -114,7 +114,7 @@ def frame_to_meters(
         raise ValueError("Cost calculation requires a timezone-aware index; got a naive one.")
 
     warnings: list[CostWarning] = []
-    resolution = resolution or detect_frame_resolution(data.index)
+    resolution = resolution if resolution is not None else detect_frame_resolution(data.index)
 
     delivered = _prepare_column(data, const.ELECTRICITY_DELIVERED, warnings)
     if delivered is None:
