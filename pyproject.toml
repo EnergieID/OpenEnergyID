@@ -1,6 +1,6 @@
 [project]
 name = "openenergyid"
-version = "0.2.1"
+version = "0.3.0"
 description = "Open Source Python library for energy analytics and simulations"
 authors = [
     { name = "Jan Pecinovsky", email = "jan@energieid.be" },
@@ -25,6 +25,8 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.12.15",
+    "energy-cost>=0.8.2",
+    "pandas>=3.0",
     "pandera[polars]>=0.22.1",
     "pvlib>=0.13.0",
     "pydantic>=2.8.2",

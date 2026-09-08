@@ -1,15 +1,18 @@
 """Generic Simulation Analysis Module."""
 
-from typing import Annotated, Union, cast
+import asyncio
+from typing import Annotated, NamedTuple, Union, cast
 
 import aiohttp
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from .. import const
 from ..abstractsim import SimulationSummary, Simulator
 from ..battsim import BatterySimulationInput, BatterySimulator
 from ..battsim import apply_simulation as apply_battery_simulation
 from ..battsim import get_simulator as get_battery_simulator
+from ..cost import ContractCostSettings, cost_simulation
 from ..models import TimeDataFrame
 from ..pvsim import PVSimulationInput
 from ..pvsim import apply_simulation as apply_pv_simulation
@@ -40,6 +43,19 @@ class ExAnteData(TimeDataFrame):
     """Ex-ante data for simulation analysis."""
 
 
+PRICE_COLUMNS = (
+    const.PRICE_ELECTRICITY_DELIVERED,
+    const.PRICE_ELECTRICITY_EXPORTED,
+)
+
+
+def _conflicting_cost_columns(cost: ContractCostSettings | None, columns: list[str]) -> list[str]:
+    """Price columns that clash with a contract-based `cost` setting, if any."""
+    if cost is None:
+        return []
+    return sorted(set(PRICE_COLUMNS) & set(columns))
+
+
 class FullSimulationInput(BaseModel):
     """Full input for running a simulation analysis."""
 
@@ -51,36 +67,89 @@ class FullSimulationInput(BaseModel):
         examples=["MS", "W-MON"],
         description="Optional list of frequencies that should be included in the analysis. Be default, only `total` is included, but you can add more here. Uses the Pandas freqstr.",
     )
+    cost: ContractCostSettings | None = Field(
+        default=None,
+        description=(
+            "Optional tariff contract to cost the simulation against, producing a full "
+            "bill before and after. Mutually exclusive with supplying "
+            "`price_electricity_delivered` / `price_electricity_exported` columns in "
+            "`ex_ante_data`, which drive the simpler price-times-volume calculation."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _reject_conflicting_cost_inputs(self) -> "FullSimulationInput":
+        """Refuse to guess which of two cost mechanisms the caller meant."""
+        clash = _conflicting_cost_columns(self.cost, self.ex_ante_data.columns)
+        if clash:
+            raise ValueError(
+                "Conflicting cost inputs: `cost` supplies a tariff contract while "
+                f"ex_ante_data also carries price columns {clash}. Pick one mechanism: "
+                "remove the price columns to use contract-based costing, or drop `cost` "
+                "to use per-interval prices."
+            )
+        return self
 
 
-async def run_simulation(
+class SimulationFrames(NamedTuple):
+    """Every frame produced by a simulation run.
+
+    ``stage_results`` holds each simulator's own output (production, charge/discharge),
+    while ``stages`` holds the cumulative grid frame after each stage. Only the latter
+    is billable.
+    """
+
+    ex_ante: pd.DataFrame
+    stage_results: list[pd.DataFrame]
+    stages: list[pd.DataFrame]
+    ex_post: pd.DataFrame
+
+
+async def simulate_frames(
     input_: FullSimulationInput, session: aiohttp.ClientSession | None = None
-) -> SimulationSummary:
-    """Run the full simulation analysis workflow."""
+) -> SimulationFrames:
+    """Run the simulation chain and return every intermediate frame."""
     df = input_.ex_ante_data.to_pandas(timezone=input_.timezone)
-
-    ex_ante_eval = evaluate(df, return_frequencies=input_.return_frequencies)
+    ex_ante = df.copy()
 
     if not isinstance(input_.simulation_parameters, list):
         parameters_list = [input_.simulation_parameters]
     else:
         parameters_list = input_.simulation_parameters
 
-    sim_evals = []
+    stage_results: list[pd.DataFrame] = []
+    stages: list[pd.DataFrame] = []
     for parameters in parameters_list:
         simulator: Simulator = get_simulator(parameters, data=df)
         await simulator.load_resources(session=session)
-        sim_eval = evaluate(
-            simulator.result_as_frame(), return_frequencies=input_.return_frequencies
-        )
-        sim_evals.append(sim_eval)
+        stage_results.append(simulator.result_as_frame())
 
         if isinstance(simulator, BatterySimulator):
             df = apply_battery_simulation(df, simulator.simulation_results)
         else:
             df = apply_pv_simulation(df, simulator.simulation_results)
+        stages.append(df.copy())
 
-    post_eval = evaluate(df, return_frequencies=input_.return_frequencies)
+    return SimulationFrames(
+        ex_ante=ex_ante,
+        stage_results=stage_results,
+        stages=stages,
+        ex_post=df,
+    )
+
+
+async def run_simulation(
+    input_: FullSimulationInput, session: aiohttp.ClientSession | None = None
+) -> SimulationSummary:
+    """Run the full simulation analysis workflow."""
+    frames = await simulate_frames(input_, session=session)
+
+    ex_ante_eval = evaluate(frames.ex_ante, return_frequencies=input_.return_frequencies)
+    sim_evals = [
+        evaluate(frame, return_frequencies=input_.return_frequencies)
+        for frame in frames.stage_results
+    ]
+    post_eval = evaluate(frames.ex_post, return_frequencies=input_.return_frequencies)
 
     comparison = compare_results(ex_ante_eval, post_eval)
 
@@ -91,11 +160,27 @@ async def run_simulation(
     post_eval_dict = eval_to_dict(post_eval)
     comparison_dict = comparison_to_dict(comparison)
 
+    cost = None
+    if input_.cost is not None:
+        # Re-check for a clash: ex_ante_data.columns is a plain mutable list, so the
+        # model_validator that ran at construction time may no longer hold by now.
+        clash = _conflicting_cost_columns(input_.cost, input_.ex_ante_data.columns)
+        if clash:
+            raise ValueError(
+                "Conflicting cost inputs: `cost` supplies a tariff contract while "
+                f"ex_ante_data also carries price columns {clash}. Pick one mechanism: "
+                "remove the price columns to use contract-based costing, or drop `cost` "
+                "to use per-interval prices."
+            )
+        # Contract costing is synchronous, CPU-bound pandas work; keep it off the loop.
+        cost = await asyncio.to_thread(cost_simulation, frames, input_.cost)
+
     summary = SimulationSummary(
         ex_ante=ex_ante_eval_dict,
         simulation_result=sim_eval_dict,
         ex_post=post_eval_dict,
         comparison=comparison_dict,
+        cost=cost,
     )
 
     return summary
