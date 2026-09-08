@@ -1,8 +1,10 @@
 """Contract-based cost calculation for simulation results."""
 
+import datetime as dt
 import logging
 
 import pandas as pd
+from energy_cost.resolution import to_pandas_freq
 
 from ..models import TimeDataFrame
 from .diagnostics import CostCalculationError, check_indexes, check_period
@@ -21,6 +23,34 @@ logger = logging.getLogger(__name__)
 
 TOTAL_COLUMN = ("total", "total", "total")
 TIMESTAMP_COLUMN = "timestamp"
+
+
+def whole_billing_periods(
+    start: dt.datetime, end: dt.datetime, output_resolution
+) -> tuple[dt.datetime, dt.datetime] | None:
+    """Shrink ``[start, end)`` to the billing periods it covers completely.
+
+    ``Tariff.apply`` snaps the window *outward* to whole billing periods, and
+    ``energy_cost`` masks any period containing a gap. So a window that starts or ends
+    mid-period leaves the meter with no data for part of the first or last bin, and that
+    bin -- and with it the grand total -- comes back as NaN.
+
+    Costing only the complete periods keeps the total meaningful. Returns ``None`` when
+    not even one whole period fits, leaving the caller to decide.
+    """
+    freq = to_pandas_freq(output_resolution)
+    offset = pd.tseries.frequencies.to_offset(freq)
+    first, last = pd.Timestamp(start), pd.Timestamp(end)
+
+    # Build the boundary grid and keep the boundaries that lie inside the window.
+    # Rolling with the offset directly is not enough: MonthBegin.rollback preserves the
+    # time of day, so an end of 02 Apr 01:00 would roll back to 01 Apr 01:00 -- still an
+    # hour into April, leaving the period incomplete.
+    grid = pd.date_range(start=first.normalize() - offset, end=last.normalize() + offset, freq=freq)
+    inside = grid[(grid >= first) & (grid <= last)]
+    if len(inside) < 2:
+        return None
+    return inside[0].to_pydatetime(), inside[-1].to_pydatetime()
 
 
 def _column_path(column) -> tuple[str, ...]:
@@ -81,6 +111,40 @@ def compute_cost(
     start = settings.start or data.index[0].to_pydatetime()
     # energy_cost treats the window as half-open, so the last interval needs its width.
     end = settings.end or (data.index[-1].to_pydatetime() + resolution)
+
+    aligned = whole_billing_periods(start, end, settings.output_resolution)
+    if aligned is None:
+        warnings.append(
+            CostWarning(
+                code=CostWarningCode.PARTIAL_BILLING_PERIOD,
+                message=(
+                    f"The period {start.isoformat()} to {end.isoformat()} does not cover "
+                    "a single whole billing period. Costing it anyway, but fixed and "
+                    "capacity charges apply for the full period while the volumes are "
+                    "partial, so the total is not comparable to a full bill."
+                ),
+                context={"start": start.isoformat(), "end": end.isoformat()},
+            )
+        )
+    elif aligned != (start, end):
+        warnings.append(
+            CostWarning(
+                code=CostWarningCode.PARTIAL_BILLING_PERIOD,
+                message=(
+                    f"Costing {aligned[0].isoformat()} to {aligned[1].isoformat()}: the "
+                    f"data runs from {start.isoformat()} to {end.isoformat()}, and the "
+                    "incomplete billing period(s) at the edges are excluded. Billing a "
+                    "part-period against a monthly tariff would leave its cost undefined."
+                ),
+                context={
+                    "data_start": start.isoformat(),
+                    "data_end": end.isoformat(),
+                    "costed_start": aligned[0].isoformat(),
+                    "costed_end": aligned[1].isoformat(),
+                },
+            )
+        )
+        start, end = aligned
 
     if preflight:
         warnings.extend(check_indexes(settings.contract, end))
