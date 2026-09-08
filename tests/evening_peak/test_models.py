@@ -434,6 +434,11 @@ class TestTimezoneValidation:
         with pytest.raises(ValidationError, match="not a known IANA time zone"):
             EveningPeakInput.model_validate(payload(1, timeZone="Mars/Olympus"))
 
+    def test_timezone_unsupported_by_polars_is_rejected(self):
+        """ "Factory" is a real zoneinfo identifier that polars' chrono-tz table rejects."""
+        with pytest.raises(ValidationError, match="not a known IANA time zone"):
+            EveningPeakInput.model_validate(payload(1, timeZone="Factory"))
+
     @pytest.mark.parametrize("zone", ["Europe/Amsterdam", "Europe/Brussels", "UTC"])
     def test_real_timezones_are_accepted(self, zone):
         assert EveningPeakInput.model_validate(payload(1, timeZone=zone)).timezone == zone

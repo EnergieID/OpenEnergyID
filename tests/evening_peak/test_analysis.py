@@ -783,3 +783,40 @@ class TestPreparedSeriesContract:
         timestamps = prepared["timestamp"].to_list()
         assert timestamps == sorted(timestamps)
         assert prepared["net_offtake_in_kilowatthour"].null_count() == 0
+
+
+class TestSharedTag:
+    """`tag()` lets analyze() and peak_moments() share one localize/sort/tag pass."""
+
+    @pytest.fixture
+    def three_days(self) -> pl.LazyFrame:
+        index = local_quarters(day(2026, 11, 2), 3 * 96)
+        return frame(index, flat_evening_profile)
+
+    def test_passing_tagged_matches_calling_without_it(self, three_days):
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+        net = analyzer.prepare_net_offtake(three_days)
+
+        baseline_result = analyzer.analyze(net)
+        baseline_moments = analyzer.peak_moments(net, num_peaks=5)
+
+        tagged = analyzer.tag(net)
+        shared_result = analyzer.analyze(net, tagged=tagged)
+        shared_moments = analyzer.peak_moments(net, num_peaks=5, tagged=tagged)
+
+        assert shared_result.daily.collect().equals(baseline_result.daily.collect())
+        assert shared_result.week_medians.collect().equals(baseline_result.week_medians.collect())
+        assert [m.peak_time for m in shared_moments] == [m.peak_time for m in baseline_moments]
+        assert [m.peak_value_in_kilowatt for m in shared_moments] == [
+            m.peak_value_in_kilowatt for m in baseline_moments
+        ]
+
+    def test_tag_of_an_empty_series_is_empty(self):
+        analyzer = EveningPeakAnalyzer(timezone=TIMEZONE)
+        net = analyzer.prepare_net_offtake(frame([], flat_evening_profile))
+
+        tagged = analyzer.tag(net)
+
+        assert tagged.height == 0
+        assert analyzer.analyze(net, tagged=tagged).daily.collect().height == 0
+        assert analyzer.peak_moments(net, num_peaks=5, tagged=tagged) == []

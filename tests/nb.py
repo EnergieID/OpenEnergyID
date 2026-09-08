@@ -28,6 +28,7 @@ def run_notebook(notebook_path):
         "demo_energiedelen.ipynb",
         "demo_energyid_download.ipynb",
         "demo_mvlr.ipynb",
+        "demo_simulation_cost.ipynb",
         "download_prices.ipynb",
         "pv_evolution.ipynb",
     ],
