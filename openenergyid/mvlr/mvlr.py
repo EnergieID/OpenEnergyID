@@ -1,6 +1,8 @@
 """Multi-variable linear regression based on statsmodels
 and Ordinary Least Squares (ols)."""
 
+import math
+
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as fm
@@ -435,16 +437,25 @@ class MultiVariableLinearRegression:
         -------
             bool: True if the model is valid, False otherwise.
         """
-        if self.fit.rsquared_adj < min_rsquared:
+        # Reject non-finite fits up front. Every NaN comparison is False, so without
+        # this guard a degenerate fit (df_resid == 0 → NaN F-stat, adj R², p-values)
+        # would silently pass all three checks below. See AB#820.
+        rsq_adj = self.fit.rsquared_adj
+        f_pvalue = self.fit.f_pvalue
+        if not math.isfinite(rsq_adj) or not math.isfinite(f_pvalue):
             return False
 
-        if self.fit.f_pvalue > max_f_pvalue:
+        if rsq_adj < min_rsquared:
+            return False
+
+        if f_pvalue > max_f_pvalue:
             return False
 
         param_keys = self.fit.pvalues.keys().tolist()
         param_keys.remove("Intercept")
         for k in param_keys:
-            if self.fit.pvalues[k] > max_pvalues:
+            pvalue = self.fit.pvalues[k]
+            if not math.isfinite(pvalue) or pvalue > max_pvalues:
                 return False
 
         return True

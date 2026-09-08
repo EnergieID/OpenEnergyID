@@ -177,15 +177,24 @@ class EveningPeakInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_timezone(self) -> Self:
-        """The timezone must be a real IANA zone.
+        """The timezone must be a real IANA zone known to both Python and polars.
 
         Checked here so an unknown zone is a rejected request with a clear message,
         rather than an error raised deep in the dataframe layer once the analysis is
-        already running.
+        already running. Python's own ``zoneinfo`` is not enough: a handful of zones
+        (e.g. ``"Factory"``) are valid IANA identifiers that ``zoneinfo`` accepts but
+        polars' chrono-tz-based time zone table rejects, and that mismatch would
+        otherwise only surface once polars actually tries to localize the data.
         """
         try:
             ZoneInfo(self.timezone)
         except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"timeZone {self.timezone!r} is not a known IANA time zone.") from exc
+        try:
+            pl.Series("_tz_probe", [None], dtype=pl.Datetime(time_zone="UTC")).dt.convert_time_zone(
+                self.timezone
+            )
+        except pl.exceptions.ComputeError as exc:
             raise ValueError(f"timeZone {self.timezone!r} is not a known IANA time zone.") from exc
         return self
 

@@ -200,31 +200,78 @@ class IndependentVariableResult(BaseModel):
         )
 
 
+class DegenerateModelError(ValueError):
+    """A regression fit whose core statistics are not finite (typically df_resid == 0).
+
+    Kept as a `ValueError` subclass so callers doing a broad `except ValueError`
+    keep working; new callers can distinguish it and read the observation counts.
+    """
+
+    def __init__(self, message: str, *, nobs: float, df_resid: float, df_model: float) -> None:
+        super().__init__(message)
+        self.nobs = nobs
+        self.df_resid = df_resid
+        self.df_model = df_model
+
+
 class MultiVariableRegressionResult(BaseModel):
     """Result of a multivariable regression model."""
 
     dependent_variable: str = Field(alias="dependentVariable")
     independent_variables: list[IndependentVariableResult] = Field(alias="independentVariables")
     r2: float = Field(ge=0, le=1, alias="rSquared")
-    r2_adj: float = Field(ge=0, le=1, alias="rSquaredAdjusted")
+    # r2_adj can be negative for a model worse than the mean; only the upper bound is
+    # meaningful. See AB#820 and AB#667: it must not be null (v3's C# DTO is
+    # non-nullable double), so a negative value is used to signal "worse than intercept".
+    r2_adj: float = Field(le=1, alias="rSquaredAdjusted")
     f_stat: float = Field(ge=0, alias="fStat")
     prob_f_stat: float = Field(ge=0, le=1, alias="probFStat")
     intercept: IndependentVariableResult
     granularity: Granularity
     frame: TimeDataFrame
+    is_valid: bool = Field(default=True, alias="isValid")
+    validation_message: str | None = Field(default=None, alias="validationMessage")
 
     model_config = ConfigDict(populate_by_name=True)
 
     @classmethod
-    def from_mvlr(cls, mvlr: MultiVariableLinearRegression) -> "MultiVariableRegressionResult":
-        """Create a MultiVariableRegressionResult from a MultiVariableLinearRegression."""
+    def from_mvlr(
+        cls,
+        mvlr: MultiVariableLinearRegression,
+        *,
+        is_valid: bool = True,
+        validation_message: str | None = None,
+    ) -> "MultiVariableRegressionResult":
+        """Create a MultiVariableRegressionResult from a MultiVariableLinearRegression.
+
+        Raises `DegenerateModelError` if the core statistics (r2, r2_adj, f_stat,
+        prob_f_stat) are not finite — typically because `df_resid == 0` after
+        resampling, leaving no residual degrees of freedom for the F distribution.
+        """
+        fit = mvlr.fit
+        core = {
+            "r2": float(fit.rsquared),
+            "r2_adj": float(fit.rsquared_adj),
+            "f_stat": float(fit.fvalue),
+            "prob_f_stat": float(fit.f_pvalue),
+        }
+        non_finite = [name for name, value in core.items() if not math.isfinite(value)]
+        if non_finite:
+            raise DegenerateModelError(
+                "Regression fit is degenerate: non-finite "
+                f"{', '.join(non_finite)} (nobs={fit.nobs}, df_model={fit.df_model}, "
+                f"df_resid={fit.df_resid}). Typically df_resid == 0 after resampling.",
+                nobs=float(fit.nobs),
+                df_resid=float(fit.df_resid),
+                df_model=float(fit.df_model),
+            )
 
         # Get independent variables
-        param_keys = mvlr.fit.params.keys().tolist()
+        param_keys = fit.params.keys().tolist()
         param_keys.remove("Intercept")
         independent_variables = []
         for k in param_keys:
-            independent_variables.append(IndependentVariableResult.from_fit(mvlr.fit, k))
+            independent_variables.append(IndependentVariableResult.from_fit(fit, k))
 
         # Create resulting TimeSeries
         cols_to_keep = list(param_keys)
@@ -235,11 +282,13 @@ class MultiVariableRegressionResult(BaseModel):
         return cls(
             dependent_variable=mvlr.y,
             independent_variables=independent_variables,
-            r2=mvlr.fit.rsquared,
-            r2_adj=mvlr.fit.rsquared_adj,
-            f_stat=mvlr.fit.fvalue,
-            prob_f_stat=mvlr.fit.f_pvalue,
-            intercept=IndependentVariableResult.from_fit(mvlr.fit, "Intercept"),
+            r2=core["r2"],
+            r2_adj=core["r2_adj"],
+            f_stat=core["f_stat"],
+            prob_f_stat=core["prob_f_stat"],
+            intercept=IndependentVariableResult.from_fit(fit, "Intercept"),
             granularity=mvlr.granularity,
             frame=TimeDataFrame.from_pandas(frame),
+            is_valid=is_valid,
+            validation_message=validation_message,
         )

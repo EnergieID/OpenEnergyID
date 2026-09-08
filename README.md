@@ -86,7 +86,16 @@ The MVLR module helps you build multivariate linear regression models to predict
 from openenergyid.mvlr import find_best_mvlr
 
 model = find_best_mvlr(data)
+if not model.is_valid:
+    print(model.validation_message)  # e.g. "Best adjusted R²: 0.63 (need ≥0.75)."
 ```
+
+`find_best_mvlr` returns the best fit it can produce across the configured
+granularities. A fit that misses the caller's thresholds is returned with
+`is_valid=False` so callers can render it with a warning; only a *structurally*
+degenerate fit (typically `df_resid == 0` after resampling) raises
+`DegenerateModelError`, which subclasses `ValueError` and carries `nobs` /
+`df_model` / `df_resid`. See `docs/specs/mvlr-degenerate-models.md`.
 
 ### PV Simulation
 

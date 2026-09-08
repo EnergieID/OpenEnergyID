@@ -125,8 +125,9 @@ class EveningPeakAnalyzer:
     -------
     >>> analyzer = EveningPeakAnalyzer(timezone="Europe/Amsterdam")
     >>> net = analyzer.prepare_net_offtake(offtake_lf, injection_lf)
-    >>> result = analyzer.analyze(net)
-    >>> moments = analyzer.peak_moments(net, num_peaks=10)
+    >>> tagged = analyzer.tag(net)  # optional: share the tag pass across both calls below
+    >>> result = analyzer.analyze(net, tagged=tagged)
+    >>> moments = analyzer.peak_moments(net, num_peaks=10, tagged=tagged)
     """
 
     DEFAULT_WINDOW_START = dt.time(16, 0)
@@ -270,6 +271,37 @@ class EveningPeakAnalyzer:
             expression = expression.dt.replace_time_zone("UTC")
         return frame.with_columns(expression.dt.convert_time_zone(self.timezone).alias(TIMESTAMP))
 
+    def _localized_net(self, net_lf: pl.LazyFrame) -> pl.LazyFrame:
+        """Net offtake, localized to the analysis timezone and sorted by time."""
+        return self._localize(net_lf.select(TIMESTAMP, NET_OFFTAKE)).sort(TIMESTAMP)
+
+    def _tag(self, localized: pl.LazyFrame) -> pl.LazyFrame:
+        """Derive the day/power/in-window columns both :meth:`analyze` and
+        :meth:`peak_moments` are built on, from an already-localized, sorted frame."""
+        return localized.with_columns(
+            pl.col(TIMESTAMP).dt.truncate("1d").alias(DAY),
+            (pl.col(NET_OFFTAKE) * QUARTERS_PER_HOUR).alias(POWER),
+            self._in_window().alias("in_window"),
+        )
+
+    def tag(self, net_lf: pl.LazyFrame) -> pl.DataFrame:
+        """Collect the frame both :meth:`analyze` and :meth:`peak_moments` are built on.
+
+        Pass the result to both as their ``tagged=`` argument to run the localize/sort/
+        tag pipeline over ``net_lf`` once instead of twice, when both are needed for the
+        same net offtake series.
+
+        Parameters
+        ----------
+        net_lf : pl.LazyFrame
+            Output of :meth:`prepare_net_offtake`.
+
+        Returns
+        -------
+        pl.DataFrame
+        """
+        return self._tag(self._localized_net(net_lf)).collect()
+
     @staticmethod
     def _single_value_column(frame: pl.LazyFrame, name: str) -> pl.LazyFrame:
         """Rename the one non-timestamp column to ``name``.
@@ -400,7 +432,9 @@ class EveningPeakAnalyzer:
 
     # ------------------------------------------------------------------ step 2
 
-    def analyze(self, net_lf: pl.LazyFrame) -> EveningPeakAnalysisResult:
+    def analyze(
+        self, net_lf: pl.LazyFrame, *, tagged: pl.DataFrame | None = None
+    ) -> EveningPeakAnalysisResult:
         """Reduce a net offtake series to daily metrics and weekly medians.
 
         Parameters
@@ -408,24 +442,30 @@ class EveningPeakAnalyzer:
         net_lf : pl.LazyFrame
             Output of :meth:`prepare_net_offtake`: ``timestamp`` and
             ``net_offtake_in_kilowatthour``.
+        tagged : pl.DataFrame, optional
+            The result of calling :meth:`tag` on the same ``net_lf``, if the caller
+            already has one. Passing it in skips re-running the localize/sort/tag
+            pipeline over ``net_lf``, which matters when both :meth:`analyze` and
+            :meth:`peak_moments` are called on the same net offtake series, as the
+            evening peak endpoint does for every request. When omitted, it is derived
+            from ``net_lf`` as before.
 
         Returns
         -------
         EveningPeakAnalysisResult
         """
-        net_lf = self._localize(net_lf.select(TIMESTAMP, NET_OFFTAKE)).sort(TIMESTAMP)
-
-        if net_lf.select(pl.len()).collect().item() == 0:
-            return self._empty_result()
-
-        tagged = net_lf.with_columns(
-            pl.col(TIMESTAMP).dt.truncate("1d").alias(DAY),
-            (pl.col(NET_OFFTAKE) * QUARTERS_PER_HOUR).alias(POWER),
-            self._in_window().alias("in_window"),
-        )
+        if tagged is None:
+            localized = self._localized_net(net_lf)
+            if localized.select(pl.len()).collect().item() == 0:
+                return self._empty_result()
+            tagged_lf = self._tag(localized)
+        else:
+            if tagged.height == 0:
+                return self._empty_result()
+            tagged_lf = tagged.lazy()
 
         observed = (
-            tagged.group_by(DAY)
+            tagged_lf.group_by(DAY)
             .agg(
                 pl.col(NET_OFFTAKE).sum().alias("daily_offtake_in_kilowatthour"),
                 pl.col(NET_OFFTAKE)
@@ -538,7 +578,13 @@ class EveningPeakAnalyzer:
 
     # ------------------------------------------------------------------ step 3
 
-    def peak_moments(self, net_lf: pl.LazyFrame, num_peaks: int = 10) -> list[PeakMoment]:
+    def peak_moments(
+        self,
+        net_lf: pl.LazyFrame,
+        num_peaks: int = 10,
+        *,
+        tagged: pl.DataFrame | None = None,
+    ) -> list[PeakMoment]:
         """Return the highest evening peaks, each with the curve of its own day.
 
         One peak per day is taken, so — unlike the capacity analysis, which takes the
@@ -551,6 +597,10 @@ class EveningPeakAnalyzer:
             Output of :meth:`prepare_net_offtake`.
         num_peaks : int, default=10
             Maximum number of peaks to return, highest first.
+        tagged : pl.DataFrame, optional
+            The result of calling :meth:`tag` on the same ``net_lf``, if the caller
+            already has one. See :meth:`analyze` for why this matters. When omitted,
+            it is derived from ``net_lf`` as before.
 
         Returns
         -------
@@ -560,12 +610,7 @@ class EveningPeakAnalyzer:
         if num_peaks <= 0:
             return []
 
-        net_lf = self._localize(net_lf.select(TIMESTAMP, NET_OFFTAKE)).sort(TIMESTAMP)
-        tagged = net_lf.with_columns(
-            pl.col(TIMESTAMP).dt.truncate("1d").alias(DAY),
-            (pl.col(NET_OFFTAKE) * QUARTERS_PER_HOUR).alias(POWER),
-            self._in_window().alias("in_window"),
-        ).collect()
+        tagged = tagged if tagged is not None else self.tag(net_lf)
 
         if tagged.height == 0:
             return []
