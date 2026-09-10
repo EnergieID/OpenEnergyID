@@ -252,7 +252,7 @@ class TestCoverage:
 
 
 class TestThreshold:
-    """The days-below-threshold count."""
+    """The days-below-threshold count and the percentage points behind it."""
 
     def test_count_is_strictly_below_the_threshold(self):
         """A day sitting exactly on the threshold does not count as below it."""
@@ -274,6 +274,55 @@ class TestThreshold:
         index = local_quarters(day(2026, 11, 2), 96)
         _, daily, _ = analyze(frame(index, flat_evening_profile), peak_share_threshold=0.9)
         assert daily.row(0, named=True)["is_below_threshold"] is True
+
+    def test_points_are_the_distance_from_the_share_to_the_threshold(self):
+        """A day below the threshold earns the percentage points it undercut it by."""
+        index = local_quarters(day(2026, 11, 2), 96)
+        _, daily, _ = analyze(frame(index, lambda _: 0.25))
+        row = daily.row(0, named=True)
+        share = row["evening_peak_share_in_percent"]
+
+        assert row["is_below_threshold"] is True
+        assert row["percentage_points_below_threshold"] == pytest.approx(37.0 - share)
+
+    def test_a_day_on_or_above_the_threshold_earns_no_points(self):
+        """Clipped at zero, so a bad day cannot cancel out a good one."""
+        index = local_quarters(day(2026, 11, 2), 96)
+        _, daily, _ = analyze(frame(index, lambda _: 0.25))
+        share = daily.row(0, named=True)["evening_peak_share_in_percent"]
+
+        exact = EveningPeakAnalyzer(timezone=TIMEZONE, peak_share_threshold=share / 100)
+        on_threshold = exact.analyze(exact.prepare_net_offtake(frame(index, lambda _: 0.25)))
+        assert on_threshold.daily.collect().row(0, named=True)[
+            "percentage_points_below_threshold"
+        ] == pytest.approx(0.0)
+
+        _, above, _ = analyze(frame(index, flat_evening_profile))
+        above_row = above.row(0, named=True)
+        assert above_row["is_below_threshold"] is False
+        assert above_row["percentage_points_below_threshold"] == pytest.approx(0.0)
+
+    def test_points_are_null_wherever_the_share_is(self):
+        """An unmeasured day earns nothing rather than a full threshold's worth."""
+        index = local_quarters(day(2026, 11, 2), 20)  # Evening window only.
+        _, daily, _ = analyze(frame(index, flat_evening_profile))
+        row = daily.row(0, named=True)
+
+        assert row["evening_peak_share_in_percent"] is None
+        assert row["percentage_points_below_threshold"] is None
+
+    def test_summary_total_is_the_daily_points_rounded_once(self):
+        """Exact per day, rounded only when the total is reported."""
+        index = local_quarters(day(2026, 11, 2), 3 * 96)
+        _, daily, result = analyze(frame(index, lambda _: 0.25))
+        stats = summarize(result, peak_share_threshold=0.37)
+
+        exact_total = daily["percentage_points_below_threshold"].sum()
+        assert stats["percentage_points_below_threshold"] == round(exact_total)
+        assert isinstance(stats["percentage_points_below_threshold"], int)
+        # Three identical days, each undercutting the threshold by the same margin.
+        assert stats["days_below_threshold"] == 3
+        assert exact_total == pytest.approx(3 * (37.0 - 20 / 96 * 100))
 
 
 class TestDaylightSaving:
@@ -476,6 +525,7 @@ class TestEdgeCases:
 
         assert stats["measured_days"] == 0
         assert stats["days_below_threshold"] == 0
+        assert stats["percentage_points_below_threshold"] == 0
         assert stats["average_peak_in_kilowatt"] is None
         assert stats["first_day"] is None
 
@@ -657,6 +707,7 @@ class TestResultSchema:
             "has_full_window": True,
             "is_complete": True,
             "is_below_threshold": False,
+            "percentage_points_below_threshold": 0.0,
         }
         row.update(overrides)
         return pl.DataFrame({key: [value] for key, value in row.items()}).with_columns(

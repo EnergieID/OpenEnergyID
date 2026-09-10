@@ -74,6 +74,7 @@ moments = analyzer.peak_moments(net_offtake, num_peaks=10)
 - Takes the two gross meter registers in kWh per quarter-hour; injection is clipped to zero **per quarter-hour, before summation**, so the share stays in 0–100% and stays comparable between households with and without PV.
 - Reports per day the highest quarter-hour power inside the window (kW) and the share of net daily offtake falling inside it (%), plus Monday-aligned weekly medians as a reference line.
 - The window (default 16:00–21:00) and the threshold for counting good days (default 37%) are configurable.
+- Summarises the threshold two ways: how many measured days fell below it, and how far below they got in total, as percentage points clipped at zero per day.
 - Day boundaries and coverage are DST-aware: a 25-hour October day is expected to have 100 quarter-hours, not 96. Days that are only partly measured report no share rather than one computed against an incomplete denominator, and unmeasured days stay in the index as nulls so a gap in the data reads as a gap.
 
 See `docs/specs/evening-peak-avoidance.md` and `demo_evening_peak.ipynb`.

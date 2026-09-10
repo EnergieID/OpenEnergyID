@@ -103,6 +103,20 @@ schema, so they are written for that audience rather than as internal notes.
 The threshold is echoed back in the response as `thresholdInPercent`, so a reader of the numbers
 knows what "below threshold" meant without having to know the configuration.
 
+### Two figures for the threshold
+
+The summary reports the threshold twice over, because the campaign asks two different questions
+of it. `daysBelowThreshold` of `measuredDays` answers *how often* — the "49 of 120 days" fraction
+on the Piekaandeel card, where every day under the line counts the same.
+`percentagePointsBelowThreshold` answers *how far*: for each day below the threshold, the distance
+from its share to the threshold, added up. Against 37%, a day at 8% is worth 29 points, a day at
+36.5% is worth 0.5, and a day at or above the threshold is worth none — the per-day value is
+clipped at zero, so a bad day cannot cancel out a good one.
+
+Both figures are computed over the same set of measured days, from one per-day column produced
+next to `is_below_threshold`, so they can never disagree about which days counted. The distances
+are exact floats throughout; the rounding to a whole number happens once, on the total.
+
 ## Implementation Details
 
 Polars and pandera internally, following `openenergyid/baseload`; pydantic `TimeSeries` models at
@@ -225,7 +239,8 @@ That jaggedness is the point rather than decoration. A smoothed profile would hi
 variation the participant is meant to act on, and would let a front end be built against a narrow
 band of values that never occurs in practice. The generator is tuned so the mean peak share lands
 near 37%, with the spread coming from the archetypes: median 36.5%, 10th percentile 26%, 90th
-percentile 50%, peaks from 0.19 to 5.64 kW, and 60 of 117 measured days below the threshold.
+percentile 50%, peaks from 0.19 to 5.64 kW, and 60 of 117 measured days below the threshold,
+worth 522 percentage points between them.
 
 Validation against real data was done separately, against a personal EnergyID record over two
 winters, and is not committed.
@@ -237,8 +252,9 @@ winters, and is not committed.
   end builds it, as it already does for the capacity analysis.
 - **Aggregation across participants**, the monthly export and the incentive calculation. This
   library answers for one connection.
-- **Deciding who is rewarded.** The analysis reports the share and counts the days under the
-  threshold; what is rewarded, how much and in what form is EvU's call.
+- **Deciding who is rewarded.** The analysis reports the share, counts the days under the
+  threshold and adds up the percentage points behind them; what is rewarded, how much and in what
+  form is EvU's call.
 - **Restricting the analysis to Energie van Utrecht workspaces.** That is a platform-level gate,
   not something this library or the endpoint can enforce — the endpoint analyses whatever series
   it is given.
@@ -247,3 +263,7 @@ winters, and is not committed.
 
 Entirely additive: a new package, a new set of models, no change to any existing module. Released
 as `0.1.42`.
+
+`percentagePointsBelowThreshold` was added to the summary in `0.3.2`, alongside a
+`percentage_points_below_threshold` column on the per-day frame. Additive again: a client that
+ignores the new key sees the same response it saw before.

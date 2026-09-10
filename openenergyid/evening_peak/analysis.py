@@ -59,6 +59,8 @@ class EveningPeakAnalysisResult:
         - ``is_complete``: the window is full *and* the day meets the coverage minimum
         - ``is_below_threshold``: the share is strictly below the threshold; null when
           the share is null
+        - ``percentage_points_below_threshold``: how far the share fell below the
+          threshold, in percentage points, clipped at zero; null when the share is null
 
     week_medians : pl.LazyFrame
         One row per ISO week (Monday-aligned), over complete days only, with columns
@@ -530,7 +532,20 @@ class EveningPeakAnalyzer:
                 pl.when(pl.col("evening_peak_share_in_percent").is_not_null())
                 .then(pl.col("evening_peak_share_in_percent") < self.peak_share_threshold * 100)
                 .otherwise(None)
-                .alias("is_below_threshold")
+                .alias("is_below_threshold"),
+                # How far below the threshold the day landed, in percentage points, kept
+                # unrounded here so the sum in ``summarize`` rounds exactly once. Clipped
+                # at zero, which makes a day sitting on the threshold contribute nothing
+                # and so agrees with the strictly-below day count above.
+                pl.when(pl.col("evening_peak_share_in_percent").is_not_null())
+                .then(
+                    (
+                        pl.lit(self.peak_share_threshold * 100)
+                        - pl.col("evening_peak_share_in_percent")
+                    ).clip(lower_bound=0)
+                )
+                .otherwise(None)
+                .alias("percentage_points_below_threshold"),
             )
             .drop("raw_evening_peak")
             .select(
@@ -545,6 +560,7 @@ class EveningPeakAnalyzer:
                 "has_full_window",
                 "is_complete",
                 "is_below_threshold",
+                "percentage_points_below_threshold",
             )
         )
 
@@ -661,6 +677,7 @@ class EveningPeakAnalyzer:
                 "has_full_window": pl.Boolean,
                 "is_complete": pl.Boolean,
                 "is_below_threshold": pl.Boolean,
+                "percentage_points_below_threshold": pl.Float64,
             }
         )
         week_medians = pl.LazyFrame(
@@ -691,6 +708,11 @@ def summarize(
         Averages, extremes, the number of days below the threshold and the number of
         measured days. ``days_below_threshold`` and ``measured_days`` are the numerator
         and denominator of the "49 of 120 days" figure; both count complete days only.
+
+        ``percentage_points_below_threshold`` is the finer-grained companion of the day
+        count: the distance from the threshold summed over the days below it, so a day
+        that stayed far under counts for more than one that only just made it. The
+        per-day distances are exact; the total is rounded to a whole number once, here.
     """
     daily = result.daily.collect()
     complete = daily.filter(pl.col("evening_peak_share_in_percent").is_not_null())
@@ -709,6 +731,11 @@ def summarize(
         "lowest_share_in_percent": _value(complete, "evening_peak_share_in_percent", "min"),
         "highest_share_in_percent": _value(complete, "evening_peak_share_in_percent", "max"),
         "days_below_threshold": int(complete["is_below_threshold"].sum()) if complete.height else 0,
+        "percentage_points_below_threshold": (
+            int(round(complete["percentage_points_below_threshold"].sum()))
+            if complete.height
+            else 0
+        ),
         "measured_days": complete.height,
         "threshold_in_percent": peak_share_threshold * 100,
         "first_day": daily[DAY].min().date() if daily.height else None,

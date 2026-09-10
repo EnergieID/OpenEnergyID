@@ -383,7 +383,8 @@ class EveningPeakSummary(BaseModel):
     days with a reported share. Peak statistics cover every day with a fully measured
     evening window, which includes days too sparse to report a share.
     ``daysBelowThreshold`` and ``measuredDays`` are the numerator and denominator of the
-    "49 of 120 days" figure.
+    "49 of 120 days" figure, and ``percentagePointsBelowThreshold`` is how far below the
+    threshold those days got, added up.
     """
 
     average_peak_in_kilowatt: float | None = Field(
@@ -407,6 +408,17 @@ class EveningPeakSummary(BaseModel):
     days_below_threshold: int = Field(
         alias="daysBelowThreshold",
         description="Measured days whose peak share was strictly below the threshold.",
+    )
+    percentage_points_below_threshold: int = Field(
+        alias="percentagePointsBelowThreshold",
+        description=(
+            "Total percentage points below the threshold over all measured days: for "
+            "each day below it, the distance from its peak share to the threshold, "
+            "summed and then rounded to a whole number. Against a 37% threshold a day "
+            "at 8% contributes 29 points, a day at 36.5% contributes 0.5, and a day at "
+            "or above the threshold contributes none. Where daysBelowThreshold counts "
+            "how often the connection stayed under the line, this says how far under."
+        ),
     )
     measured_days: int = Field(
         alias="measuredDays",
