@@ -36,7 +36,8 @@ class DailyEveningPeakSchema(pa.DataFrameModel):
     The two headline metrics are nullable: a day whose evening window is not fully
     covered by measurements has no meaningful peak, and a day without offtake has no
     meaningful share. The ``le=100`` bound on the share is the check that would catch a
-    regression in the injection clipping.
+    regression in the injection clipping, and the ``ge=0`` on the percentage points the
+    one that would catch a lost clip on the distance to the threshold.
     """
 
     evening_peak_in_kilowatt: float | None = pa.Field(ge=0, nullable=True)
@@ -49,6 +50,7 @@ class DailyEveningPeakSchema(pa.DataFrameModel):
     has_full_window: bool = pa.Field()
     is_complete: bool = pa.Field()
     is_below_threshold: bool | None = pa.Field(nullable=True)
+    percentage_points_below_threshold: float | None = pa.Field(ge=0, le=100, nullable=True)
 
     class Config:
         """Allow the undeclared day column through untouched."""

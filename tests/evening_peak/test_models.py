@@ -377,6 +377,7 @@ class TestOutput:
             "lowestShare",
             "highestShare",
             "daysBelowThreshold",
+            "percentagePointsBelowThreshold",
             "measuredDays",
             "thresholdInPercent",
             "firstDay",
@@ -406,6 +407,12 @@ class TestOutput:
 
         assert summary["measuredDays"] == len(measured)
         assert summary["daysBelowThreshold"] <= summary["measuredDays"]
+        # Every counted day is worth at most a whole threshold's worth of points.
+        assert (
+            0
+            <= summary["percentagePointsBelowThreshold"]
+            <= round(summary["daysBelowThreshold"] * summary["thresholdInPercent"])
+        )
         assert summary["highestShare"] == pytest.approx(max(measured))
         assert summary["lowestShare"] == pytest.approx(min(measured))
 

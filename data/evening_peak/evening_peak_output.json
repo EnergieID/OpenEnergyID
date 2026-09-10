@@ -2619,6 +2619,7 @@
   "lowestShare": 8.16072458076753,
   "highestShare": 64.65146082624162,
   "daysBelowThreshold": 60,
+  "percentagePointsBelowThreshold": 522,
   "measuredDays": 117,
   "thresholdInPercent": 37.0,
   "firstDay": "2026-11-01",
