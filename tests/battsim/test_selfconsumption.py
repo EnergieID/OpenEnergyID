@@ -133,3 +133,50 @@ class TestLossFactor:
         discharged = result[const.ELECTRICITY_DISCHARGED].iloc[1]
         assert charged == pytest.approx(1.0)
         assert discharged / charged == pytest.approx((1 - loss) / (1 + loss))
+
+
+NAN = float("nan")
+
+
+class TestMissingData:
+    @pytest.mark.parametrize(
+        ("offtake", "injection"),
+        [(NAN, 1.0), (1.0, NAN), (NAN, NAN)],
+        ids=["offtake", "injection", "both"],
+    )
+    def test_battery_is_idle_when_a_value_is_missing(
+        self, offtake: float, injection: float
+    ) -> None:
+        result = _simulate(
+            [offtake, 0.0],
+            [injection, 0.0],
+            charge_power=4.0,
+            discharge_power=4.0,
+            initial_charge=5.0,
+        )
+
+        assert result[const.ELECTRICITY_CHARGED].iloc[0] == 0.0
+        assert result[const.ELECTRICITY_DISCHARGED].iloc[0] == 0.0
+        # State of energy at the start of the next interval is unchanged
+        assert result[const.STATE_OF_ENERGY].iloc[1] == 5.0
+
+    def test_missing_interval_passes_through_unchanged(self) -> None:
+        result = _simulate([NAN], [1.0], charge_power=4.0, discharge_power=4.0, initial_charge=5.0)
+
+        assert pd.isna(result[const.ELECTRICITY_DELIVERED].iloc[0])
+        assert result[const.ELECTRICITY_EXPORTED].iloc[0] == 1.0
+
+    def test_measured_intervals_are_unaffected_by_a_gap(self) -> None:
+        offtake = [0.0, 0.3, 1.2, 0.1]
+        injection = [1.5, 0.4, 0.0, 0.9]
+        params = {"charge_power": 3.0, "discharge_power": 3.0, "capacity": 2.0, "loss": 0.05}
+
+        without_gap = _simulate(offtake, injection, **params)
+        with_gap = _simulate(
+            offtake[:2] + [NAN] + offtake[2:], injection[:2] + [NAN] + injection[2:], **params
+        )
+
+        pd.testing.assert_frame_equal(
+            with_gap.drop(index=with_gap.index[2]).reset_index(drop=True),
+            without_gap.reset_index(drop=True),
+        )
