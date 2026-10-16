@@ -18,6 +18,7 @@ from ..pvsim import PVSimulationInput
 from ..pvsim import apply_simulation as apply_pv_simulation
 from ..pvsim import get_simulator as get_pv_simulator
 from ..simeval import compare_results, evaluate
+from .diagnostics import check_ex_ante
 
 # Here we define all types of simulations
 SimulationInput = Annotated[
@@ -175,12 +176,16 @@ async def run_simulation(
         # Contract costing is synchronous, CPU-bound pandas work; keep it off the loop.
         cost = await asyncio.to_thread(cost_simulation, frames, input_.cost)
 
+    coverage, warnings = check_ex_ante(frames.ex_ante)
+
     summary = SimulationSummary(
         ex_ante=ex_ante_eval_dict,
         simulation_result=sim_eval_dict,
         ex_post=post_eval_dict,
         comparison=comparison_dict,
         cost=cost,
+        coverage=coverage,
+        warnings=warnings,
     )
 
     return summary
