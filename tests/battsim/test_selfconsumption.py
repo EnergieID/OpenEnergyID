@@ -1,5 +1,7 @@
 """Tests for the self-consumption battery simulator."""
 
+import asyncio
+
 import pandas as pd
 import pytest
 from pydantic import ValidationError
@@ -9,6 +11,8 @@ from openenergyid.battsim.selfconsumption import (
     SelfConsumptionBatterySimulationInput,
     SelfConsumptionBatterySimulator,
 )
+from openenergyid.models import TimeDataFrame
+from openenergyid.sim import FullSimulationInput, run_simulation
 
 batt_sim = SelfConsumptionBatterySimulator.batt_sim
 
@@ -126,3 +130,33 @@ class TestLossFactor:
         discharged = result[const.ELECTRICITY_DISCHARGED].iloc[1]
         assert charged == pytest.approx(1.0)
         assert discharged / charged == pytest.approx((1 - loss) / (1 + loss))
+
+
+class TestMissingExportColumn:
+    def test_same_result_as_zero_export(self) -> None:
+        offtake = _series([0.3, 1.2, 0.1, 0.0])
+        without_export = pd.DataFrame({const.ELECTRICITY_DELIVERED: offtake})
+        zero_export = without_export.assign(**{const.ELECTRICITY_EXPORTED: 0.0})
+
+        def simulate(data: pd.DataFrame) -> pd.DataFrame:
+            return SelfConsumptionBatterySimulator(
+                capacity=2.0, power=3.0, initial_charge=1.0, data=data
+            ).simulate()
+
+        pd.testing.assert_frame_equal(simulate(without_export), simulate(zero_export))
+
+    def test_run_simulation_without_export_column(self) -> None:
+        index = pd.date_range("2025-01-01", periods=96, freq="15min", tz="Europe/Brussels")
+        frame = pd.DataFrame({const.ELECTRICITY_DELIVERED: 0.2}, index=index)
+        payload = {
+            "ex_ante_data": TimeDataFrame.from_pandas(frame).model_dump(mode="json"),
+            "simulation_parameters": {
+                "type": "selfconsumptionbatterysimulation",
+                "capacity": 10.0,
+                "power": 5.0,
+            },
+        }
+
+        summary = asyncio.run(run_simulation(FullSimulationInput.model_validate(payload)))
+
+        assert summary.ex_post["total"][const.ELECTRICITY_DELIVERED] == pytest.approx(19.2)
