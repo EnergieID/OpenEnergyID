@@ -137,8 +137,14 @@ def check_period(
     start: dt.datetime,
     end: dt.datetime,
     output_resolution: Resolution,
+    *,
+    capacity_history: bool = False,
 ) -> list[CostWarning]:
-    """Warn about billing windows that make the absolute cost hard to interpret."""
+    """Warn about billing windows that make the absolute cost hard to interpret.
+
+    ``capacity_history`` says the capacity window is filled from measured month peaks
+    supplied by the caller, so a short period no longer overstates the capacity cost.
+    """
     warnings: list[CostWarning] = []
     freq = to_pandas_freq(output_resolution)
     span = pd.Timestamp(end) - pd.Timestamp(start)
@@ -163,7 +169,7 @@ def check_period(
         )
 
     capacity_rule = _capacity_rule(contract)
-    if capacity_rule is not None and capacity_rule.window_periods:
+    if capacity_rule is not None and capacity_rule.window_periods and not capacity_history:
         billing_offset = pd.tseries.frequencies.to_offset(
             to_pandas_freq(capacity_rule.billing_period)
         )

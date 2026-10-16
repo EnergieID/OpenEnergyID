@@ -17,6 +17,8 @@ from .models import (
     CostSummary,
     CostWarning,
     CostWarningCode,
+    MonthPeak,
+    MonthPeaks,
 )
 from .resolution import pandas_freq_to_resolution
 
@@ -29,6 +31,8 @@ __all__ = [
     "CostSummary",
     "CostWarning",
     "CostWarningCode",
+    "MonthPeak",
+    "MonthPeaks",
     "UnknownIndexError",
     "compare_costs",
     "compute_cost",
