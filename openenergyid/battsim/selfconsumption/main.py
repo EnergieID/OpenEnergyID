@@ -1,9 +1,9 @@
 """Self-consumption battery simulation module."""
 
-from typing import Literal
+from typing import Literal, Self
 
 import pandas as pd
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ... import const
 from ..abstract import BatterySimulationInputAbstract, BatterySimulator
@@ -22,9 +22,22 @@ class SelfConsumptionBatterySimulationInput(BatterySimulationInputAbstract):
         description="Battery capacity in kWh",
         examples=[10.0, 20.0, 50.0],
     )
-    power: float = Field(
-        ...,
-        description="Battery power in kW",
+    power: float | None = Field(
+        None,
+        description=(
+            "Battery power in kW, for both charging and discharging. "
+            "Required unless `charge_power` and `discharge_power` are both given."
+        ),
+        examples=[5.0, 10.0, 20.0],
+    )
+    charge_power: float | None = Field(
+        None,
+        description="Maximum charge power in kW. Defaults to `power`.",
+        examples=[5.0, 10.0, 20.0],
+    )
+    discharge_power: float | None = Field(
+        None,
+        description="Maximum discharge power in kW. Defaults to `power`.",
         examples=[5.0, 10.0, 20.0],
     )
     initial_charge: float = Field(
@@ -34,9 +47,23 @@ class SelfConsumptionBatterySimulationInput(BatterySimulationInputAbstract):
     )
     loss_factor: float = Field(
         0.05,
-        description="Battery loss factor per cycle",
+        description=(
+            "Battery loss factor, applied once on charging and once on discharging: "
+            "charging stores (1 - l) of the energy, discharging takes (1 + l) from the "
+            "battery per kWh delivered. The round-trip efficiency is (1 - l) / (1 + l)."
+        ),
         examples=[0.01, 0.05, 0.1],
     )
+
+    @model_validator(mode="after")
+    def _resolve_powers(self) -> Self:
+        if self.charge_power is None:
+            self.charge_power = self.power
+        if self.discharge_power is None:
+            self.discharge_power = self.power
+        if self.charge_power is None or self.discharge_power is None:
+            raise ValueError("Supply `power`, or both `charge_power` and `discharge_power`.")
+        return self
 
 
 class SelfConsumptionBatterySimulator(BatterySimulator):
@@ -47,9 +74,11 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
     def __init__(
         self,
         capacity: float,
-        power: float,
+        power: float | None = None,
         initial_charge: float = 0.0,
         loss_factor: float = 0.05,
+        charge_power: float | None = None,
+        discharge_power: float | None = None,
         **kwargs,
     ):
         """
@@ -57,14 +86,22 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
 
         Args:
             capacity: Battery capacity in kWh.
-            power: Battery power in kW.
+            power: Battery power in kW, for both directions.
             initial_charge: Initial state of charge in kWh.
-            loss_factor: Battery loss factor per cycle.
+            loss_factor: Battery loss factor, applied once per direction.
+            charge_power: Maximum charge power in kW. Defaults to `power`.
+            discharge_power: Maximum discharge power in kW. Defaults to `power`.
         """
         super().__init__(**kwargs)
 
+        charge_power = power if charge_power is None else charge_power
+        discharge_power = power if discharge_power is None else discharge_power
+        if charge_power is None or discharge_power is None:
+            raise ValueError("Supply `power`, or both `charge_power` and `discharge_power`.")
+
         self.capacity = capacity
-        self.power = power
+        self.charge_power = charge_power
+        self.discharge_power = discharge_power
         self.initial_charge = initial_charge
         self.loss_factor = loss_factor
 
@@ -73,7 +110,8 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
             energy_offtake=self.data[const.ELECTRICITY_DELIVERED],
             energy_injection=self.data[const.ELECTRICITY_EXPORTED],
             capacity=self.capacity,
-            power=self.power,
+            charge_power=self.charge_power,
+            discharge_power=self.discharge_power,
             initial_charge=self.initial_charge,
             loss=self.loss_factor,
         )
@@ -97,7 +135,8 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
         energy_offtake: pd.Series,
         energy_injection: pd.Series,
         capacity: float,
-        power: float,
+        charge_power: float,
+        discharge_power: float,
         initial_charge: float = 0.0,
         loss: float = 0.0,
     ) -> pd.DataFrame:
@@ -108,7 +147,8 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
             energy_offtake: Energy from the grid in kWh
             energy_injection: Energy to the grid in kWh
             capacity: Maximum charge in kWh.
-            power: Maximum power in kW
+            charge_power: Maximum charge power in kW
+            discharge_power: Maximum discharge power in kW
             initial_charge: starting state of charge in kWh, default 0
         Output:
             pd.DataFrame, 2 columns
@@ -118,6 +158,9 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
         Naive approach:
             Injection is put into the battery, Offtake is taken from the battery, as long as
             charge is available and it does not exceed the power.
+            Within one interval the battery first discharges, then charges in the time that
+            is left: if discharging took a fraction f of the interval at discharge_power,
+            charging gets (1 - f) of it at charge_power.
         Possible improvements:
             Extra "losses" due to momentary peaks that are not captured in the 15min averages
         """
@@ -150,7 +193,7 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
                 energy_to_withdraw = requested + requested * loss
                 # But if the soc is lower than that, or the maximum energy we can draw (power/4), we need to limit
                 # So what actually is withdrawn:
-                withdrawn = min(soe, power / 4, energy_to_withdraw)
+                withdrawn = min(soe, discharge_power / 4, energy_to_withdraw)
                 # This is delivered with exception of the loss
                 delivered = withdrawn / (1 + loss)
 
@@ -158,7 +201,9 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
                 discharge.append(delivered)
                 new_offtake.append(offtake - delivered)
 
-                net_power = power - withdrawn * 4
+                # Share of the interval that discharging took
+                discharge_share = withdrawn * 4 / discharge_power if discharge_power else 0.0
+                net_power = charge_power * (1 - discharge_share)
 
                 # Externally, `injection`kWh is available to charge with
                 available = injection
