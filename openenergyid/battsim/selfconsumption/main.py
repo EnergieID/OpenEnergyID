@@ -24,6 +24,7 @@ class SelfConsumptionBatterySimulationInput(BatterySimulationInputAbstract):
     )
     power: float | None = Field(
         None,
+        ge=0,
         description=(
             "Battery power in kW, for both charging and discharging. "
             "Required unless `charge_power` and `discharge_power` are both given."
@@ -32,11 +33,13 @@ class SelfConsumptionBatterySimulationInput(BatterySimulationInputAbstract):
     )
     charge_power: float | None = Field(
         None,
+        ge=0,
         description="Maximum charge power in kW. Defaults to `power`.",
         examples=[5.0, 10.0, 20.0],
     )
     discharge_power: float | None = Field(
         None,
+        ge=0,
         description="Maximum discharge power in kW. Defaults to `power`.",
         examples=[5.0, 10.0, 20.0],
     )
@@ -164,6 +167,7 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
         Naive approach:
             Injection is put into the battery, Offtake is taken from the battery, as long as
             charge is available and it does not exceed the power.
+            An interval where offtake or injection is missing (NaN) leaves the battery idle.
             Within one interval the battery first discharges, then charges in the time that
             is left: if discharging took a fraction f of the interval at discharge_power,
             charging gets (1 - f) of it at charge_power.
@@ -193,6 +197,16 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
             )
         else:
             for offtake, injection in zip(energy_offtake.values, energy_injection.values):
+                # Without both offtake and injection the net balance is unknown, so the
+                # battery stays idle and the interval passes through unchanged
+                if pd.isna(offtake) or pd.isna(injection):
+                    discharge.append(0.0)
+                    charge.append(0.0)
+                    new_offtake.append(offtake)
+                    new_injection.append(injection)
+                    soes.append(soe)
+                    continue
+
                 # `offtake`kWh is requested from the battery
                 requested = offtake
                 # However the battery needs to contain more than that, to account for loss

@@ -56,6 +56,13 @@ class TestInput:
         with pytest.raises(ValidationError):
             SelfConsumptionBatterySimulationInput(capacity=10, **kwargs)
 
+    @pytest.mark.parametrize("field", ["power", "charge_power", "discharge_power"])
+    def test_negative_power_is_rejected(self, field: str) -> None:
+        kwargs = {"power": 5} | {field: -1}
+
+        with pytest.raises(ValidationError):
+            SelfConsumptionBatterySimulationInput(capacity=10, **kwargs)
+
     def test_simulator_from_input_uses_directional_powers(self) -> None:
         input_ = SelfConsumptionBatterySimulationInput(
             capacity=10, power=5, charge_power=4, discharge_power=3
@@ -160,3 +167,65 @@ class TestMissingExportColumn:
         summary = asyncio.run(run_simulation(FullSimulationInput.model_validate(payload)))
 
         assert summary.ex_post["total"][const.ELECTRICITY_DELIVERED] == pytest.approx(19.2)
+
+
+NAN = float("nan")
+
+
+class TestMissingData:
+    @pytest.mark.parametrize(
+        ("offtake", "injection"),
+        [(NAN, 1.0), (1.0, NAN), (NAN, NAN)],
+        ids=["offtake", "injection", "both"],
+    )
+    def test_battery_is_idle_when_a_value_is_missing(
+        self, offtake: float, injection: float
+    ) -> None:
+        result = _simulate(
+            [offtake, 0.0],
+            [injection, 0.0],
+            charge_power=4.0,
+            discharge_power=4.0,
+            initial_charge=5.0,
+        )
+
+        assert result[const.ELECTRICITY_CHARGED].iloc[0] == 0.0
+        assert result[const.ELECTRICITY_DISCHARGED].iloc[0] == 0.0
+        # State of energy at the start of the next interval is unchanged
+        assert result[const.STATE_OF_ENERGY].iloc[1] == 5.0
+
+    def test_missing_interval_passes_through_unchanged(self) -> None:
+        result = _simulate([NAN], [1.0], charge_power=4.0, discharge_power=4.0, initial_charge=5.0)
+
+        assert pd.isna(result[const.ELECTRICITY_DELIVERED].iloc[0])
+        assert result[const.ELECTRICITY_EXPORTED].iloc[0] == 1.0
+
+    def test_nullable_na_leaves_battery_idle(self) -> None:
+        index = pd.date_range("2025-01-01", periods=2, freq="15min", tz="Europe/Brussels")
+        result = batt_sim(
+            energy_offtake=pd.Series([pd.NA, 0.0], index=index, dtype="Float64"),
+            energy_injection=pd.Series([1.0, 0.0], index=index, dtype="Float64"),
+            capacity=10.0,
+            charge_power=4.0,
+            discharge_power=4.0,
+            initial_charge=5.0,
+            loss=0.0,
+        )
+
+        assert result[const.ELECTRICITY_CHARGED].iloc[0] == 0.0
+        assert result[const.STATE_OF_ENERGY].iloc[1] == 5.0
+
+    def test_measured_intervals_are_unaffected_by_a_gap(self) -> None:
+        offtake = [0.0, 0.3, 1.2, 0.1]
+        injection = [1.5, 0.4, 0.0, 0.9]
+        params = {"charge_power": 3.0, "discharge_power": 3.0, "capacity": 2.0, "loss": 0.05}
+
+        without_gap = _simulate(offtake, injection, **params)
+        with_gap = _simulate(
+            offtake[:2] + [NAN] + offtake[2:], injection[:2] + [NAN] + injection[2:], **params
+        )
+
+        pd.testing.assert_frame_equal(
+            with_gap.drop(index=with_gap.index[2]).reset_index(drop=True),
+            without_gap.reset_index(drop=True),
+        )

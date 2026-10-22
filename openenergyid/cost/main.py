@@ -7,6 +7,7 @@ import pandas as pd
 from energy_cost.resolution import to_pandas_freq
 
 from ..models import TimeDataFrame
+from .capacity import with_capacity_history
 from .diagnostics import CostCalculationError, check_indexes, check_period
 from .meters import detect_frame_resolution, frame_to_meters
 from .models import (
@@ -146,9 +147,28 @@ def compute_cost(
         )
         start, end = aligned
 
+    # Measured month peaks fill the capacity window with real history; without them (or
+    # with a gap in the 11 months before the first billed month) energy_cost derives the
+    # capacity from this frame alone.
+    has_history = False
+    if settings.month_peaks is not None:
+        with_history = with_capacity_history(
+            consumption, settings.month_peaks, settings.contract, start
+        )
+        if with_history is not None:
+            consumption, has_history = with_history, True
+
     if preflight:
         warnings.extend(check_indexes(settings.contract, end))
-        warnings.extend(check_period(settings.contract, start, end, settings.output_resolution))
+        warnings.extend(
+            check_period(
+                settings.contract,
+                start,
+                end,
+                settings.output_resolution,
+                capacity_history=has_history,
+            )
+        )
 
     try:
         frame = settings.contract.apply(

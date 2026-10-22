@@ -2,11 +2,12 @@
 
 import datetime as dt
 from enum import StrEnum
+from typing import Literal
 
 import isodate
 from energy_cost import Contract, ContractHistory, MeterType
 from energy_cost.resolution import Resolution
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from ..models import TimeDataFrame
 
@@ -35,6 +36,51 @@ class CostWarning(BaseModel):
     code: CostWarningCode
     message: str
     context: dict = Field(default_factory=dict)
+
+
+class MonthPeak(BaseModel):
+    """The highest quarter-hour of one calendar month."""
+
+    timestamp: AwareDatetime = Field(
+        description=(
+            "Start of the quarter-hour in which the month's peak occurred, with the "
+            "local UTC offset."
+        ),
+        examples=["2023-02-17T18:15:00+01:00"],
+    )
+    value: float = Field(
+        ge=0,
+        description="Average offtake power over that quarter-hour, in W.",
+        examples=[4210.0],
+    )
+
+
+class MonthPeaks(BaseModel):
+    """Measured monthly peaks of a grid connection, used as capacity history."""
+
+    resolution: Literal["P1M"] = Field(
+        default="P1M", description="Always `P1M`: one peak per calendar month."
+    )
+    values: list[MonthPeak] = Field(
+        description=(
+            "One peak per calendar month, in W. Provide the costed period plus the 11 "
+            "months before it (the capacity tariff averages 12 monthly peaks). Only the "
+            "months before the first billed month are used; peaks inside the period are "
+            "recalculated from the frame being costed."
+        )
+    )
+
+    @model_validator(mode="after")
+    def _one_peak_per_month(self) -> "MonthPeaks":
+        # The month is the one in the peak's own local offset, which is how it was stored.
+        months = [(v.timestamp.year, v.timestamp.month) for v in self.values]
+        duplicated = sorted({f"{y}-{m:02d}" for y, m in months if months.count((y, m)) > 1})
+        if duplicated:
+            raise ValueError(
+                "`month_peaks` must hold one value per calendar month; more than one "
+                f"for {', '.join(duplicated)}."
+            )
+        return self
 
 
 class ContractCostSettings(BaseModel):
@@ -72,6 +118,21 @@ class ContractCostSettings(BaseModel):
             "Also cost the cumulative frame after each individual simulation stage, "
             "giving the marginal value of adding each asset. Costs one extra contract "
             "evaluation per stage."
+        ),
+    )
+    month_peaks: MonthPeaks | None = Field(
+        default=None,
+        description=(
+            "Measured month peaks of the connection (W, one per calendar month, "
+            "resolution `P1M`) used as capacity history. The capacity tariff averages "
+            "the last 12 monthly peaks, so a costed period needs the 11 months before "
+            "it. Supply the costed period plus those 11 months: the months before the "
+            "first billed month then fill the window, for every frame costed (ex-ante, "
+            "ex-post and each stage alike), while the months inside the period are "
+            "always recalculated from the frame being costed, so provided in-period "
+            "peaks are ignored. Optional: without it, or when any of those 11 months is "
+            "missing, the capacity is derived from the frame alone and "
+            "`capacity_window_incomplete` is reported as before."
         ),
     )
     start: dt.datetime | None = Field(
