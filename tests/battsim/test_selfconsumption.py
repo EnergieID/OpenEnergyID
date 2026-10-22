@@ -166,6 +166,21 @@ class TestMissingData:
         assert pd.isna(result[const.ELECTRICITY_DELIVERED].iloc[0])
         assert result[const.ELECTRICITY_EXPORTED].iloc[0] == 1.0
 
+    def test_nullable_na_leaves_battery_idle(self) -> None:
+        index = pd.date_range("2025-01-01", periods=2, freq="15min", tz="Europe/Brussels")
+        result = batt_sim(
+            energy_offtake=pd.Series([pd.NA, 0.0], index=index, dtype="Float64"),
+            energy_injection=pd.Series([1.0, 0.0], index=index, dtype="Float64"),
+            capacity=10.0,
+            charge_power=4.0,
+            discharge_power=4.0,
+            initial_charge=5.0,
+            loss=0.0,
+        )
+
+        assert result[const.ELECTRICITY_CHARGED].iloc[0] == 0.0
+        assert result[const.STATE_OF_ENERGY].iloc[1] == 5.0
+
     def test_measured_intervals_are_unaffected_by_a_gap(self) -> None:
         offtake = [0.0, 0.3, 1.2, 0.1]
         injection = [1.5, 0.4, 0.0, 0.9]

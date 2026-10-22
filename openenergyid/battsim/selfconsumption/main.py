@@ -1,6 +1,5 @@
 """Self-consumption battery simulation module."""
 
-import math
 from typing import Literal, Self
 
 import pandas as pd
@@ -194,7 +193,7 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
             for offtake, injection in zip(energy_offtake.values, energy_injection.values):
                 # Without both offtake and injection the net balance is unknown, so the
                 # battery stays idle and the interval passes through unchanged
-                if math.isnan(offtake) or math.isnan(injection):
+                if pd.isna(offtake) or pd.isna(injection):
                     discharge.append(0.0)
                     charge.append(0.0)
                     new_offtake.append(offtake)
