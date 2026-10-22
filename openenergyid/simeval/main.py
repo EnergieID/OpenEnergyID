@@ -70,6 +70,13 @@ class Evaluator:
             self.data[const.ELECTRICITY_PRODUCED] - self.data[const.ELECTRICITY_EXPORTED]
         ).clip(lower=0)
 
+        # Add electricity_self_consumed_direct: self-consumption minus what went into a
+        # battery. Charged energy is negative in simulation results, hence the abs().
+        self.data[const.ELECTRICITY_SELF_CONSUMED_DIRECT] = (
+            self.data[const.ELECTRICITY_SELF_CONSUMED]
+            - self.data[const.ELECTRICITY_CHARGED].abs().fillna(0.0)
+        ).clip(lower=0)
+
         # Add costs
         self.data[const.COST_ELECTRICITY_DELIVERED] = (
             self.data[const.ELECTRICITY_DELIVERED] * self.data[const.PRICE_ELECTRICITY_DELIVERED]
@@ -92,6 +99,7 @@ class Evaluator:
                     const.ELECTRICITY_PRODUCED,
                     const.ELECTRICITY_CONSUMED,
                     const.ELECTRICITY_SELF_CONSUMED,
+                    const.ELECTRICITY_SELF_CONSUMED_DIRECT,
                     const.COST_ELECTRICITY_DELIVERED,
                     const.EARNINGS_ELECTRICITY_EXPORTED,
                     const.COST_ELECTRICITY_NET,
@@ -113,6 +121,7 @@ class Evaluator:
                         const.ELECTRICITY_PRODUCED,
                         const.ELECTRICITY_CONSUMED,
                         const.ELECTRICITY_SELF_CONSUMED,
+                        const.ELECTRICITY_SELF_CONSUMED_DIRECT,
                         const.COST_ELECTRICITY_DELIVERED,
                         const.EARNINGS_ELECTRICITY_EXPORTED,
                         const.COST_ELECTRICITY_NET,
@@ -133,6 +142,11 @@ class Evaluator:
                 frame[const.RATIO_SELF_CONSUMPTION] = np.divide(
                     frame[const.ELECTRICITY_SELF_CONSUMED], frame[const.ELECTRICITY_PRODUCED]
                 )
+                if const.ELECTRICITY_SELF_CONSUMED_DIRECT in frame:
+                    frame[const.RATIO_SELF_CONSUMPTION_DIRECT] = np.divide(
+                        frame[const.ELECTRICITY_SELF_CONSUMED_DIRECT],
+                        frame[const.ELECTRICITY_PRODUCED],
+                    )
                 frame[const.RATIO_SELF_SUFFICIENCY] = np.divide(
                     frame[const.ELECTRICITY_SELF_CONSUMED],
                     frame[const.ELECTRICITY_CONSUMED],
