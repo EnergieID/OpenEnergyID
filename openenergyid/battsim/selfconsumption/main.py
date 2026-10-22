@@ -24,6 +24,7 @@ class SelfConsumptionBatterySimulationInput(BatterySimulationInputAbstract):
     )
     power: float | None = Field(
         None,
+        ge=0,
         description=(
             "Battery power in kW, for both charging and discharging. "
             "Required unless `charge_power` and `discharge_power` are both given."
@@ -32,11 +33,13 @@ class SelfConsumptionBatterySimulationInput(BatterySimulationInputAbstract):
     )
     charge_power: float | None = Field(
         None,
+        ge=0,
         description="Maximum charge power in kW. Defaults to `power`.",
         examples=[5.0, 10.0, 20.0],
     )
     discharge_power: float | None = Field(
         None,
+        ge=0,
         description="Maximum discharge power in kW. Defaults to `power`.",
         examples=[5.0, 10.0, 20.0],
     )

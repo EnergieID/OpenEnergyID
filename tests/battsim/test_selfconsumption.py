@@ -52,6 +52,13 @@ class TestInput:
         with pytest.raises(ValidationError):
             SelfConsumptionBatterySimulationInput(capacity=10, **kwargs)
 
+    @pytest.mark.parametrize("field", ["power", "charge_power", "discharge_power"])
+    def test_negative_power_is_rejected(self, field: str) -> None:
+        kwargs = {"power": 5} | {field: -1}
+
+        with pytest.raises(ValidationError):
+            SelfConsumptionBatterySimulationInput(capacity=10, **kwargs)
+
     def test_simulator_from_input_uses_directional_powers(self) -> None:
         input_ = SelfConsumptionBatterySimulationInput(
             capacity=10, power=5, charge_power=4, discharge_power=3
