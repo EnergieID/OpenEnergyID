@@ -1,4 +1,6 @@
+import datetime as dt
 from abc import ABC, abstractmethod
+from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Self
 
 import pandas as pd
@@ -13,6 +15,41 @@ class SimulationInputAbstract(BaseModel):
     """Abstract input parameters for any Simulation"""
 
     type: str
+
+
+class SimulationWarningCode(StrEnum):
+    """Machine-readable reasons why a simulation result may be unreliable."""
+
+    NO_INJECTION_DATA = "no_injection_data"
+    ENERGY_DATA_INCOMPLETE = "energy_data_incomplete"
+
+
+class SimulationWarning(BaseModel):
+    """A caveat attached to a simulation result, about the ex-ante data it was based on."""
+
+    code: SimulationWarningCode
+    message: str
+    context: dict = Field(default_factory=dict)
+
+
+class DataCoverage(BaseModel):
+    """How much measured data the simulation was based on."""
+
+    start: dt.datetime | None = Field(None, description="First ex-ante timestamp.")
+    end: dt.datetime | None = Field(None, description="Last ex-ante timestamp.")
+    days_with_delivered: int = Field(
+        description="Days (in the simulation timezone) with at least one offtake value."
+    )
+    days_with_exported: int = Field(
+        description="Days (in the simulation timezone) with at least one injection value."
+    )
+    intervals: int = Field(description="Number of ex-ante intervals.")
+    intervals_incomplete: int = Field(
+        description=(
+            "Intervals missing offtake, or missing injection while injection data "
+            "exists for other intervals."
+        )
+    )
 
 
 class SimulationSummary(BaseModel):
@@ -34,6 +71,17 @@ class SimulationSummary(BaseModel):
             ),
         ),
     ] = None
+    coverage: Annotated[
+        DataCoverage | None,
+        Field(default=None, description="How much measured data the simulation was based on."),
+    ] = None
+    warnings: Annotated[
+        list[SimulationWarning],
+        Field(
+            default_factory=list,
+            description="Caveats about the ex-ante data. Cost caveats are in `cost.warnings`.",
+        ),
+    ]
 
 
 class Simulator(ABC):
