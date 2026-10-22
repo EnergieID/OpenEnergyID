@@ -109,9 +109,15 @@ class SelfConsumptionBatterySimulator(BatterySimulator):
         self.loss_factor = loss_factor
 
     def simulate(self, **kwargs) -> pd.DataFrame:
+        # Without an export column there is no injection to charge from
+        if const.ELECTRICITY_EXPORTED in self.data.columns:
+            energy_injection = self.data[const.ELECTRICITY_EXPORTED]
+        else:
+            energy_injection = pd.Series(0.0, index=self.data.index)
+
         results = self.batt_sim(
             energy_offtake=self.data[const.ELECTRICITY_DELIVERED],
-            energy_injection=self.data[const.ELECTRICITY_EXPORTED],
+            energy_injection=energy_injection,
             capacity=self.capacity,
             charge_power=self.charge_power,
             discharge_power=self.discharge_power,
