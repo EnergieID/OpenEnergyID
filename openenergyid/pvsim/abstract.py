@@ -27,6 +27,17 @@ class PVSimulationInputAbstract(SimulationInputAbstract):
         description="Resolution of the simulation results",
         examples=["15min", "1h", "D", "MS"],
     )
+    degradation_rate: float = Field(
+        0.0,
+        ge=0,
+        lt=1,
+        description=(
+            "Yearly loss of production as a fraction (0.005 is 0.5 % per year). Only "
+            "used to project the savings over the years (`financial`); the simulated "
+            "period itself is year 1, without degradation."
+        ),
+        examples=[0.0, 0.005],
+    )
 
 
 class PVSimulator(Simulator, ABC):
