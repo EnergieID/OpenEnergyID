@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from ..cost.models import CostSummary
+    from ..financial.models import FinancialSummary
 
 
 class SimulationInputAbstract(BaseModel):
@@ -71,6 +72,16 @@ class SimulationSummary(BaseModel):
             ),
         ),
     ] = None
+    financial: Annotated[
+        "FinancialSummary | None",
+        Field(
+            default=None,
+            description=(
+                "Payback, NPV and IRR, from the savings re-simulated year by year with the "
+                "assets degraded. Present only when `financial` settings were supplied."
+            ),
+        ),
+    ] = None
     coverage: Annotated[
         DataCoverage | None,
         Field(default=None, description="How much measured data the simulation was based on."),
@@ -124,10 +135,14 @@ class Simulator(ABC):
         raise NotImplementedError()
 
 
-# Resolve the forward reference on SimulationSummary.cost. The cost models live in
-# openenergyid.cost, which does not import abstractsim, so this is safe to do eagerly.
+# Resolve the forward references on SimulationSummary.cost and .financial. Neither
+# openenergyid.cost nor openenergyid.financial imports abstractsim, so this is safe to do
+# eagerly.
 from ..cost.models import (  # noqa: E402  pylint: disable=wrong-import-position
     CostSummary,
+)
+from ..financial.models import (  # noqa: E402  pylint: disable=wrong-import-position
+    FinancialSummary,
 )
 
 SimulationSummary.model_rebuild()
