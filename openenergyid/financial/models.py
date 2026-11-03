@@ -4,6 +4,9 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+# Number of years simulated and costed by default, including year 1 and the last year.
+SIMULATED_YEARS = 7
+
 
 class FinancialWarningCode(StrEnum):
     """Machine-readable reasons why a financial projection may be unreliable."""
@@ -58,6 +61,18 @@ class FinancialSettings(BaseModel):
         le=50,
         description="Number of years to project, typically the expected lifetime.",
         examples=[25, 10],
+    )
+    simulated_years: int | None = Field(
+        default=SIMULATED_YEARS,
+        ge=2,
+        description=(
+            "Number of years simulated and costed again when an asset degrades, spread "
+            "evenly over the horizon and including the first and last year; the years in "
+            "between are interpolated. Every simulated year adds a contract costing, so "
+            "fewer is faster. `null` simulates every year. Without degradation (every "
+            "`degradation_rate` 0) nothing is simulated again and this is ignored."
+        ),
+        examples=[7, 3, None],
     )
 
 

@@ -112,6 +112,11 @@ class TestSimulatedYears:
     def test_none_simulates_every_year(self) -> None:
         assert simulated_years(25, None) == list(range(1, 26))
 
+    @pytest.mark.parametrize("count", [0, 1])
+    def test_fewer_than_two_simulated_years_is_refused(self, count) -> None:
+        with pytest.raises(ValidationError):
+            _input(financial={**FINANCIAL, "simulated_years": count})
+
     def test_degradation_factor(self) -> None:
         assert degradation_factor(0.02, 1) == 1.0
         assert degradation_factor(0.02, 11) == pytest.approx(0.98**10)
@@ -197,3 +202,25 @@ class TestFinancialSummary:
 
         assert restored["financial"]["settings"]["investment"] == FINANCIAL["investment"]
         assert len(restored["financial"]["yearly"]) == FINANCIAL["horizon_years"]
+
+    def test_without_degradation_nothing_is_costed_again(self, monkeypatch) -> None:
+        from openenergyid.sim import years
+
+        calls = []
+        monkeypatch.setattr(years, "compute_cost", lambda *args, **kwargs: calls.append(args))
+
+        summary = _run(_input())
+
+        assert calls == []
+        assert [year.simulated for year in summary.financial.yearly] == [True] + [False] * 9
+
+    @pytest.mark.parametrize("count, expected", [(3, 3), (None, 10)])
+    def test_the_number_of_simulated_years_is_configurable(self, count, expected) -> None:
+        summary = _run(
+            _input(
+                battery={**BATTERY, "degradation_rate": 0.1},
+                financial={**FINANCIAL, "simulated_years": count},
+            )
+        )
+
+        assert sum(year.simulated for year in summary.financial.yearly) == expected

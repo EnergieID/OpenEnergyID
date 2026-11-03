@@ -83,9 +83,11 @@ class FullSimulationInput(BaseModel):
         default=None,
         description=(
             "Optional investment, to project the savings over the years and report the "
-            "payback time, NPV and IRR. Every year is simulated again with each asset "
-            "degraded by its `degradation_rate`, and costed against `cost`, which is "
-            "therefore required."
+            "payback time, NPV and IRR. The years are costed against `cost`, which is "
+            "therefore required. When an asset has a `degradation_rate`, "
+            "`financial.simulated_years` years are simulated again with the assets "
+            "degraded, and costed: each adds latency. With every rate 0, every year "
+            "costs the same as year 1 and nothing is simulated again."
         ),
     )
 

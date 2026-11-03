@@ -15,6 +15,7 @@ from .main import (
     summarise,
 )
 from .models import (
+    SIMULATED_YEARS,
     FinancialSettings,
     FinancialSummary,
     FinancialWarning,
@@ -23,6 +24,7 @@ from .models import (
 )
 
 __all__ = [
+    "SIMULATED_YEARS",
     "FinancialSettings",
     "FinancialSummary",
     "FinancialWarning",

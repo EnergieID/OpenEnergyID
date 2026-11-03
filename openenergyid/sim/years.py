@@ -7,8 +7,10 @@ year-1 result, so nothing is downloaded or modelled again; the battery is simula
 because a smaller battery does not save proportionally less.
 
 Costing a year against the contract takes far longer than simulating it, so not every year
-is simulated: ``SIMULATED_YEARS`` years spread evenly over the horizon are, and the cost of
-the years in between is interpolated. Degradation is smooth, so this loses next to nothing.
+is simulated: ``FinancialSettings.simulated_years`` years spread evenly over the horizon
+are (``SIMULATED_YEARS`` by default), and the cost of the years in between is interpolated.
+Degradation is smooth, so this loses next to nothing. Without degradation no year is
+simulated again: every year costs the same as year 1.
 """
 
 from collections.abc import Sequence
@@ -24,6 +26,7 @@ from ..battsim.abstract import BatterySimulationInputAbstract
 from ..battsim.selfconsumption import SelfConsumptionBatterySimulationInput
 from ..cost import ContractCostSettings, CostSummary, compute_cost
 from ..financial import (
+    SIMULATED_YEARS,
     FinancialSettings,
     FinancialSummary,
     FinancialWarning,
@@ -33,9 +36,6 @@ from ..financial import (
     summarise,
 )
 from ..pvsim import apply_simulation as apply_pv_simulation
-
-# Number of years simulated and costed, including year 1 and the last year.
-SIMULATED_YEARS = 7
 
 
 def degradation_factor(rate: float, year: int) -> float:
@@ -92,14 +92,14 @@ def project_financials(
     cost_settings: ContractCostSettings,
     cost: CostSummary,
     settings: FinancialSettings,
-    simulated: int | None = SIMULATED_YEARS,
 ) -> FinancialSummary:
     """Cost the years of the horizon and turn the savings into payback, NPV and IRR.
 
     ``frames`` is the ``SimulationFrames`` of year 1 and ``cost`` its contract cost, which
-    already gives year 1. ``simulated`` years spread over the horizon are simulated again
-    and costed over the same window, with only the totals asked for (``None`` does every
-    year); the cost of the years in between is interpolated. The ex-ante cost does not
+    already gives year 1. ``settings.simulated_years`` years spread over the horizon are
+    simulated again and costed over the same window, with only the totals asked for
+    (``None`` does every year); the cost of the years in between is interpolated. When no
+    asset degrades, no year is simulated again. The ex-ante cost does not
     depend on the assets, so it is the same every year.
     """
     before, after = cost.ex_ante.total, cost.ex_post.total
@@ -134,7 +134,7 @@ def project_financials(
                 "end": end,
             }
         )
-        for year in simulated_years(horizon, simulated)[1:]:
+        for year in simulated_years(horizon, settings.simulated_years)[1:]:
             frame = simulate_year(frames.ex_ante, frames.stage_results, parameters_list, year)
             result, _ = compute_cost(frame, year_settings, preflight=False)
             if result.total is None:
