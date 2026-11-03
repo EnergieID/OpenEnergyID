@@ -13,12 +13,14 @@ from ..battsim import BatterySimulationInput, BatterySimulator
 from ..battsim import apply_simulation as apply_battery_simulation
 from ..battsim import get_simulator as get_battery_simulator
 from ..cost import ContractCostSettings, cost_simulation
+from ..financial import FinancialSettings
 from ..models import TimeDataFrame
 from ..pvsim import PVSimulationInput
 from ..pvsim import apply_simulation as apply_pv_simulation
 from ..pvsim import get_simulator as get_pv_simulator
 from ..simeval import compare_results, evaluate
 from .diagnostics import check_ex_ante
+from .years import project_financials
 
 # Here we define all types of simulations
 SimulationInput = Annotated[
@@ -77,6 +79,33 @@ class FullSimulationInput(BaseModel):
             "`ex_ante_data`, which drive the simpler price-times-volume calculation."
         ),
     )
+    financial: FinancialSettings | None = Field(
+        default=None,
+        description=(
+            "Optional investment, to project the savings over the years and report the "
+            "payback time, NPV and IRR. The years are costed against `cost`, which is "
+            "therefore required. When an asset has a `degradation_rate`, "
+            "`financial.simulated_years` years are simulated again with the assets "
+            "degraded, and costed: each adds latency. With every rate 0, every year "
+            "costs the same as year 1 and nothing is simulated again."
+        ),
+    )
+
+    def parameters_list(self) -> list[SimulationInput]:
+        """The simulation parameters as a list, one per stage."""
+        if isinstance(self.simulation_parameters, list):
+            return self.simulation_parameters
+        return [self.simulation_parameters]
+
+    @model_validator(mode="after")
+    def _require_cost_for_financial(self) -> "FullSimulationInput":
+        """The yearly savings come from the contract cost, so there is nothing without it."""
+        if self.financial is not None and self.cost is None:
+            raise ValueError(
+                "`financial` needs a tariff contract in `cost`: the yearly savings are the "
+                "difference between the contract cost before and after."
+            )
+        return self
 
     @model_validator(mode="after")
     def _reject_conflicting_cost_inputs(self) -> "FullSimulationInput":
@@ -113,14 +142,9 @@ async def simulate_frames(
     df = input_.ex_ante_data.to_pandas(timezone=input_.timezone)
     ex_ante = df.copy()
 
-    if not isinstance(input_.simulation_parameters, list):
-        parameters_list = [input_.simulation_parameters]
-    else:
-        parameters_list = input_.simulation_parameters
-
     stage_results: list[pd.DataFrame] = []
     stages: list[pd.DataFrame] = []
-    for parameters in parameters_list:
+    for parameters in input_.parameters_list():
         simulator: Simulator = get_simulator(parameters, data=df)
         await simulator.load_resources(session=session)
         stage_results.append(simulator.result_as_frame())
@@ -176,6 +200,18 @@ async def run_simulation(
         # Contract costing is synchronous, CPU-bound pandas work; keep it off the loop.
         cost = await asyncio.to_thread(cost_simulation, frames, input_.cost)
 
+    financial = None
+    if input_.financial is not None and input_.cost is not None and cost is not None:
+        # Re-simulates and costs every later year: synchronous and CPU-bound as well.
+        financial = await asyncio.to_thread(
+            project_financials,
+            frames,
+            input_.parameters_list(),
+            input_.cost,
+            cost,
+            input_.financial,
+        )
+
     coverage, warnings = check_ex_ante(frames.ex_ante)
 
     summary = SimulationSummary(
@@ -184,6 +220,7 @@ async def run_simulation(
         ex_post=post_eval_dict,
         comparison=comparison_dict,
         cost=cost,
+        financial=financial,
         coverage=coverage,
         warnings=warnings,
     )
