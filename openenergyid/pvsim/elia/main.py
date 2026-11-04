@@ -63,17 +63,12 @@ class EliaPVSimulator(PVSimulator):
         session: aiohttp.ClientSession,
     ) -> pd.Series:
         """Download load factors from the API."""
-        pv_load_factor_json = await elia.get_dataset(
-            dataset="ods032",
+        pv_load_factors = await elia.get_pv_load_factors(
             start=start,
             end=end,
             region=region,
-            select={"loadfactor"},
             session=session,
         )
-        pv_load_factors = elia.parse_response(
-            data=pv_load_factor_json, index="datetime", columns=["loadfactor"]
-        )["loadfactor"]
         pv_load_factors = pv_load_factors.truncate(
             after=pd.Timestamp(end, tz="Europe/Brussels") - pd.Timedelta(minutes=15)
         )
