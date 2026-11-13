@@ -107,7 +107,13 @@ class PVYearResult(BaseModel):
     actual_production: float = Field(serialization_alias="actualProduction")
     predicted_production: float = Field(serialization_alias="predictedProduction")
     error: float
-    relative_error: float | None = Field(serialization_alias="relativeError")
+    relative_error: float | None = Field(
+        serialization_alias="relativeError",
+        description=(
+            "(actual - predicted) / predicted, so -1 means no production at all. "
+            "None when the prediction is not positive and there was production."
+        ),
+    )
     complete_year: bool = Field(serialization_alias="completeYear")
 
     model_config = ConfigDict(populate_by_name=True)

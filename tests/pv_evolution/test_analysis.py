@@ -5,6 +5,7 @@ import pytest
 
 from openenergyid import TimeDataFrame, const
 from openenergyid.pv_evolution import LongTermPVAnalyzer, PVLongTermAnalysisInput
+from openenergyid.pv_evolution import main as main_module
 
 
 def _make_daily_frame(
@@ -68,7 +69,8 @@ def test_long_term_analysis_happy_path_and_diagnostics() -> None:
 
     result_2023 = [result for result in output.yearly_results if result.year == 2023][0]
     assert result_2023.error > 0
-    assert result_2023.relative_error > 0  # type: ignore[operator]
+    # 10% above the prediction is +10%, measured against the prediction.
+    assert result_2023.relative_error == pytest.approx(0.1)
 
 
 def test_default_baseline_starts_at_first_available_day_and_skips_first_partial_year() -> None:
@@ -345,7 +347,7 @@ def test_input_must_cover_default_twelve_month_baseline() -> None:
         _make_input_model(frame)
 
 
-def test_zero_actual_with_nonzero_prediction_has_null_relative_error() -> None:
+def test_zero_actual_with_nonzero_prediction_is_minus_one() -> None:
     frame = _make_daily_frame("2021-01-01", periods=365 * 2, production_factor=2.0)
     frame.loc[frame.index.year == 2022, const.ELECTRICITY_PRODUCED] = 0.0  # type: ignore[index]
 
@@ -354,7 +356,45 @@ def test_zero_actual_with_nonzero_prediction_has_null_relative_error() -> None:
     result_2022 = [result for result in output.yearly_results if result.year == 2022][0]
     assert result_2022.actual_production == pytest.approx(0.0)
     assert result_2022.predicted_production > 0
-    assert result_2022.relative_error is None
+    assert result_2022.relative_error == pytest.approx(-1.0)
+
+
+def test_relative_error_is_bounded_below_by_minus_one() -> None:
+    frame = _make_daily_frame("2021-01-01", periods=365 * 2, production_factor=2.0)
+    # A year with a long outage: only the first ten days produce.
+    outage = (frame.index.year == 2022) & (frame.index.dayofyear > 10)  # type: ignore[attr-defined]
+    frame.loc[outage, const.ELECTRICITY_PRODUCED] = 0.0  # type: ignore[index]
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+
+    result_2022 = [result for result in output.yearly_results if result.year == 2022][0]
+    assert result_2022.actual_production > 0
+    assert -1.0 < result_2022.relative_error < -0.9  # type: ignore[operator]
+
+
+@pytest.mark.parametrize(
+    ("actual_factor", "expected"),
+    [(0.0, 0.0), (1.0, None)],
+    ids=["no-production", "production"],
+)
+def test_non_positive_prediction_has_no_ratio(
+    monkeypatch: pytest.MonkeyPatch, actual_factor: float, expected: float | None
+) -> None:
+    frame = _make_daily_frame("2021-01-01", periods=365 * 2, production_factor=2.0)
+    frame.loc[frame.index.year == 2022, const.ELECTRICITY_PRODUCED] *= actual_factor  # type: ignore[index]
+
+    # A fitted negative intercept can predict a negative total for a dark year.
+    monkeypatch.setattr(
+        main_module,
+        "predict_linear_regression",
+        lambda _regression, frame, x_name: pd.Series(-1.0, index=frame.index),
+    )
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+
+    result_2022 = [result for result in output.yearly_results if result.year == 2022][0]
+    assert result_2022.predicted_production < 0
+    assert result_2022.relative_error == expected
 
 
 def test_optional_reference_and_api_aliases_are_reflected_in_output() -> None:

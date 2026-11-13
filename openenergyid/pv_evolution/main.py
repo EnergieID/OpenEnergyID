@@ -293,10 +293,13 @@ class LongTermPVAnalyzer:
             actual = float(actual_monthly.sum())
             prediction = float(prediction_series.sum())
             error = actual - prediction
-            if actual == 0:
-                relative_error = 0.0 if prediction == 0 else None
+            # Relative to the prediction, so a year with an outage bottoms out at -100%
+            # instead of dividing by a near-zero actual. A non-positive prediction
+            # (possible with a negative intercept) has no meaningful ratio.
+            if prediction > 0:
+                relative_error = error / prediction
             else:
-                relative_error = error / actual
+                relative_error = 0.0 if actual == 0 else None
 
             yearly_results.append(
                 PVYearResult(
