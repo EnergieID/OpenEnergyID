@@ -69,6 +69,51 @@ itself is skipped as well, since it would trivially match.
 `b`, or null without the horizontal series), the intercept (always 0) and the R² of the fit on
 the reference buckets.
 
+### 5. Uncertainty and trend
+
+A single year is off by a few percent from noise alone, so a yearly result means little
+without its uncertainty. And the slow decline the analysis is meant to show is better read
+from the trend over the years than from any one year.
+
+**Residual noise.** The reference buckets do not fit exactly. Their residuals
+`r = P − P̂` give the relative noise of the fit, assuming a bucket's residual scales with its
+predicted production:
+
+```
+s² = Σ r² / Σ P̂² · n / (n − k)      n buckets, k weights
+```
+
+Pooling this way keeps the small winter buckets from dominating, as an average of per-bucket
+ratios would.
+
+**Per-year uncertainty.** With independent monthly residuals, a period's total has a relative
+noise of `s · √(Σ P̂²) / Σ P̂` over its predicted months: about `s / √12` for a full year,
+wider for a year with fewer months. A year's result is measured against the reference fit,
+which carries the same kind of noise over its own buckets. `relativeErrorUncertainty` is the
+two combined (`√(σ_year² + σ_reference²)`), as one standard deviation in the unit of
+`relativeError`: about two thirds of the time the true deviation lies within ±1σ, and about
+95% within ±2σ.
+
+**Trend.** `trend` is a straight line through the relative errors of the complete years,
+fitted by weighted least squares with weight `1 / σ_year²`. The reference fit's noise is left
+out of these weights: it shifts every year by the same amount and does not change the slope.
+When the reference period is a calendar year that is not itself among the results, it counts
+as a point at zero, since every other year is measured against it.
+
+- `slope` is the change in relative error per year, so −0.01 is a loss of 1% per year.
+- `slopeStandardError` is the standard error of the weighted fit, scaled up by
+  `√χ²_red` when the years scatter around the line more than their uncertainties predict.
+  Year-to-year noise that the monthly residuals miss, such as a bias in one year's irradiance
+  data, then widens the error instead of being hidden.
+- `intercept` is the fitted relative error in `firstYear`; the line is
+  `intercept + slope · (year − firstYear)`.
+- `trend` is null with fewer than three points.
+
+On 42 residential systems with five to six years of data, about two thirds of the yearly
+points fell within one standard deviation of their trend line. Well-fitting systems
+(R² above 0.97) had a yearly uncertainty of about 1–3.5% and a slope standard error of about
+0.3–1.5% per year.
+
 ## Why two irradiance series
 
 ### The bias of one tilted series
@@ -132,3 +177,6 @@ irradiance gave the same improvement, so the two daily series are enough.
 `solar_radiation_horizontal` is optional. Without it, or when it holds no values, the model is
 the single-series fit and the output is identical to before, with
 `coefficientHorizontal: null`.
+
+`relativeErrorUncertainty` and `trend` are new fields; clients that ignore unknown fields are
+unaffected.

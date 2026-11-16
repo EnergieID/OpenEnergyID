@@ -115,6 +115,40 @@ class PVYearResult(BaseModel):
         ),
     )
     complete_year: bool = Field(serialization_alias="completeYear")
+    relative_error_uncertainty: float | None = Field(
+        default=None,
+        serialization_alias="relativeErrorUncertainty",
+        description=(
+            "One standard deviation of `relative_error`, in the same unit. Combines this "
+            "year's noise with that of the reference fit, both from the residual noise of "
+            "the reference buckets. Wider for incomplete years. None when `relative_error` "
+            "is None."
+        ),
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PVTrend(BaseModel):
+    """Linear trend of the yearly relative error: the change in performance per year."""
+
+    slope: float = Field(
+        description="Change of `relative_error` per year, so -0.01 is a loss of 1% per year."
+    )
+    slope_standard_error: float = Field(
+        serialization_alias="slopeStandardError",
+        description="One standard deviation of `slope`.",
+    )
+    intercept: float = Field(
+        description="Fitted `relative_error` in `first_year`. The trend line is "
+        "intercept + slope * (year - first_year)."
+    )
+    first_year: int = Field(serialization_alias="firstYear")
+    last_year: int = Field(serialization_alias="lastYear")
+    year_count: int = Field(
+        serialization_alias="yearCount",
+        description="Number of years in the fit, including the reference year when it counts.",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -147,6 +181,10 @@ class PVLongTermAnalysisOutput(BaseModel):
     yearly_results: list[PVYearResult] = Field(serialization_alias="yearlyResults")
     regression_diagnostics: PVRegressionDiagnostics = Field(
         serialization_alias="regressionDiagnostics"
+    )
+    trend: PVTrend | None = Field(
+        default=None,
+        description="Trend over the complete years. None with fewer than three usable years.",
     )
 
     model_config = ConfigDict(populate_by_name=True)

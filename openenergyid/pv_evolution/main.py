@@ -4,7 +4,9 @@ The method is described in ``docs/specs/pv-long-term-evolution.md``.
 """
 
 import datetime as dt
+import math
 
+import numpy as np
 import pandas as pd
 
 from openenergyid import const
@@ -20,6 +22,7 @@ from .models import (
     PVLongTermAnalysisInput,
     PVLongTermAnalysisOutput,
     PVRegressionDiagnostics,
+    PVTrend,
     PVYearResult,
 )
 
@@ -38,12 +41,17 @@ class LongTermPVAnalyzer:
     system's own seasonal profile, which a single tilted series cannot, and
     removes most of the seasonal bias of an incomplete year. See
     ``docs/specs/pv-long-term-evolution.md``.
+
+    Each yearly result carries an uncertainty derived from the residual noise of the
+    reference fit, and the output carries the trend of the yearly results with its
+    standard error.
     """
 
     minimum_bucket_days = 25
     maximum_bucket_days = 35
     minimum_usable_buckets = 6
     target_bucket_days = 30.4375
+    minimum_trend_years = 3
 
     def _prepare_daily_frame(self, input_data: PVLongTermAnalysisInput) -> pd.DataFrame:
         """Normalize validated input into daily local-midnight rows."""
@@ -262,6 +270,99 @@ class LongTermPVAnalyzer:
         expected_days = 366 if pd.Timestamp(year=year, month=1, day=1).is_leap_year else 365
         return len(yearly_frame) == expected_days
 
+    def _relative_noise(
+        self,
+        reference: pd.DataFrame,
+        reference_prediction: pd.Series,
+        weight_count: int,
+    ) -> float | None:
+        """Return the relative noise `s` of the reference fit.
+
+        The residual of each bucket is assumed to scale with its predicted
+        production: `s² = Σ r² / Σ P̂² · n / (n − k)`. Pooling this way keeps the
+        small winter buckets from dominating, as a mean of per-bucket ratios would.
+        None when there are not more buckets than weights, or no prediction.
+        """
+        bucket_count = len(reference)
+        degrees_of_freedom = bucket_count - weight_count
+        if degrees_of_freedom <= 0:
+            return None
+
+        residuals = reference[const.ELECTRICITY_PRODUCED] - reference_prediction
+        predicted_squares = float((reference_prediction**2).sum())
+        if predicted_squares <= 0:
+            return None
+
+        variance = float((residuals**2).sum()) / predicted_squares
+        return math.sqrt(variance * bucket_count / degrees_of_freedom)
+
+    def _period_noise(self, relative_noise: float | None, prediction: pd.Series) -> float | None:
+        """Return the relative noise of a period's total production.
+
+        With independent month-like residuals of relative size `s`, the sum over the
+        period has `σ = s · √(Σ P̂²) / Σ P̂`: about `s / √12` for a full year and wider
+        for a year with fewer months.
+        """
+        if relative_noise is None:
+            return None
+        total = float(prediction.sum())
+        if total <= 0:
+            return None
+        return relative_noise * math.sqrt(float((prediction**2).sum())) / total
+
+    def _trend(
+        self,
+        points: list[tuple[int, float, float | None]],
+        reference_year: int | None,
+        reference_noise: float | None,
+    ) -> PVTrend | None:
+        """Fit a straight line through `(year, relative error, noise)` of complete years.
+
+        The reference year counts as a point at zero when it is a calendar year not
+        already among the points, since the other years are measured against it.
+        The noise excludes the uncertainty of the reference fit itself: that is the
+        same offset in every year and does not change the slope.
+        The fit is weighted by `1 / σ²`. Its standard error is scaled up by the
+        scatter of the points around the line when that scatter is larger than the
+        uncertainties predict, so year-to-year noise the monthly residuals miss is
+        not hidden. Without uncertainties, the fit is unweighted and the standard
+        error comes from the scatter alone.
+        """
+        points = list(points)
+        if reference_year is not None and all(year != reference_year for year, _, _ in points):
+            points.append((reference_year, 0.0, reference_noise))
+        if len(points) < self.minimum_trend_years:
+            return None
+
+        points.sort()
+        years = np.array([year for year, _, _ in points], dtype=float)
+        values = np.array([value for _, value, _ in points], dtype=float)
+        sigmas = [sigma for _, _, sigma in points]
+        weighted = all(sigma is not None and sigma > 0 for sigma in sigmas)
+        weights = 1 / np.array(sigmas, dtype=float) ** 2 if weighted else np.ones(len(points))
+
+        mean_year = float(np.sum(weights * years) / np.sum(weights))
+        mean_value = float(np.sum(weights * values) / np.sum(weights))
+        spread = float(np.sum(weights * (years - mean_year) ** 2))
+        slope = float(np.sum(weights * (years - mean_year) * (values - mean_value)) / spread)
+        residuals = values - (mean_value + slope * (years - mean_year))
+        reduced_chi_square = float(np.sum(weights * residuals**2)) / (len(points) - 2)
+
+        if weighted:
+            standard_error = math.sqrt(max(1.0, reduced_chi_square) / spread)
+        else:
+            standard_error = math.sqrt(reduced_chi_square / spread)
+
+        first_year = int(years[0])
+        return PVTrend(
+            slope=slope,
+            slope_standard_error=standard_error,
+            intercept=mean_value + slope * (first_year - mean_year),
+            first_year=first_year,
+            last_year=int(years[-1]),
+            year_count=len(points),
+        )
+
     def analyze(self, input_data: PVLongTermAnalysisInput) -> PVLongTermAnalysisOutput:
         """Run the analysis and return typed yearly metrics and diagnostics."""
         frame = self._prepare_daily_frame(input_data)
@@ -299,6 +400,13 @@ class LongTermPVAnalyzer:
             y_name=const.ELECTRICITY_PRODUCED,
         )
         coefficients = linear_regression_coefficients(regression, predictors)
+        reference_prediction = predict_linear_regression(regression, reference, x_name=predictors)
+        relative_noise = self._relative_noise(
+            reference, reference_prediction, weight_count=len(predictors)
+        )
+        # The noise of the reference fit is a shared offset in every year's result.
+        reference_noise = self._period_noise(relative_noise, reference_prediction)
+        trend_points: list[tuple[int, float, float | None]] = []
 
         yearly_results: list[PVYearResult] = []
         year_index = frame.index.year  # type: ignore
@@ -342,6 +450,16 @@ class LongTermPVAnalyzer:
                 relative_error = error / prediction
             else:
                 relative_error = 0.0 if actual == 0 else None
+            year_noise = self._period_noise(relative_noise, prediction_series)
+            uncertainty = (
+                math.hypot(year_noise, reference_noise)
+                if relative_error is not None
+                and year_noise is not None
+                and reference_noise is not None
+                else None
+            )
+            if complete_year and relative_error is not None:
+                trend_points.append((int(year), relative_error, year_noise))
 
             yearly_results.append(
                 PVYearResult(
@@ -351,6 +469,7 @@ class LongTermPVAnalyzer:
                     error=error,
                     relative_error=relative_error,
                     complete_year=complete_year,
+                    relative_error_uncertainty=uncertainty,
                 )
             )
 
@@ -363,5 +482,8 @@ class LongTermPVAnalyzer:
                 coefficient_horizontal=coefficients.get(const.SOLAR_RADIATION_HORIZONTAL),
                 intercept=intercept,
                 r_squared=r_squared,
+            ),
+            trend=self._trend(
+                trend_points, reference_year=reference_year, reference_noise=reference_noise
             ),
         )
