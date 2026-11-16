@@ -1,5 +1,6 @@
 import datetime as dt
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -410,3 +411,135 @@ def test_optional_reference_and_api_aliases_are_reflected_in_output() -> None:
     }
     assert "yearlyResults" in output_dump
     assert "regressionDiagnostics" in output_dump
+
+
+# Two irradiance series: tilted (35° south) and horizontal.
+
+
+def _make_two_irradiance_frame(
+    start: str,
+    periods: int,
+    tilted_weight: float,
+    horizontal_weight: float,
+) -> pd.DataFrame:
+    """Daily frame with seasonal tilted and horizontal irradiance.
+
+    Horizontal irradiance swings more over the year than tilted irradiance, as in
+    reality: a south-facing tilt gains most in winter. Production is an exact
+    weighted sum of the two.
+    """
+    index = pd.date_range(start=start, periods=periods, freq="D", tz="UTC")
+    season = (1 - np.cos(2 * np.pi * (index.dayofyear - 1) / 365.25)) / 2  # 0 in Jan, 1 in Jul
+    tilted = pd.Series(2000.0 + 3000.0 * season, index=index)
+    horizontal = pd.Series(500.0 + 5000.0 * season, index=index)
+    return pd.DataFrame(
+        {
+            const.SOLAR_RADIATION: tilted,
+            const.SOLAR_RADIATION_HORIZONTAL: horizontal,
+            const.ELECTRICITY_PRODUCED: tilted_weight * tilted + horizontal_weight * horizontal,
+        },
+        index=index,
+    )
+
+
+def test_two_irradiance_weights_are_recovered() -> None:
+    frame = _make_two_irradiance_frame(
+        "2021-01-01", periods=365 * 2, tilted_weight=0.6, horizontal_weight=0.9
+    )
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+    diagnostics = output.regression_diagnostics
+
+    assert diagnostics.coefficient == pytest.approx(0.6)
+    assert diagnostics.coefficient_horizontal == pytest.approx(0.9)
+    assert diagnostics.intercept == pytest.approx(0.0)
+    assert diagnostics.r_squared == pytest.approx(1.0)
+    result_2022 = [result for result in output.yearly_results if result.year == 2022][0]
+    assert result_2022.relative_error == pytest.approx(0.0, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("tilted_weight", "horizontal_weight"),
+    [(2.0, 0.0), (0.0, 2.0)],
+    ids=["south-facing", "flat-or-east-west"],
+)
+def test_two_irradiance_weights_are_never_negative(
+    tilted_weight: float, horizontal_weight: float
+) -> None:
+    frame = _make_two_irradiance_frame(
+        "2021-01-01",
+        periods=365 * 2,
+        tilted_weight=tilted_weight,
+        horizontal_weight=horizontal_weight,
+    )
+
+    diagnostics = LongTermPVAnalyzer().analyze(_make_input_model(frame)).regression_diagnostics
+
+    assert diagnostics.coefficient == pytest.approx(tilted_weight, abs=1e-6)
+    assert diagnostics.coefficient_horizontal == pytest.approx(horizontal_weight, abs=1e-6)
+    assert diagnostics.coefficient >= 0
+    assert diagnostics.coefficient_horizontal >= 0  # type: ignore[operator]
+
+
+def test_horizontal_irradiance_removes_seasonal_bias_of_incomplete_year() -> None:
+    # A system that follows horizontal irradiance, observed until the end of February.
+    frame = _make_two_irradiance_frame(
+        "2021-01-01", periods=365 + 31 + 28, tilted_weight=0.0, horizontal_weight=1.0
+    )
+    tilted_only = frame.drop(columns=[const.SOLAR_RADIATION_HORIZONTAL])
+
+    with_horizontal = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+    without_horizontal = LongTermPVAnalyzer().analyze(_make_input_model(tilted_only))
+
+    ytd_with = with_horizontal.yearly_results[-1]
+    ytd_without = without_horizontal.yearly_results[-1]
+    assert ytd_with.year == ytd_without.year == 2022
+    assert ytd_with.complete_year is False
+    # The tilted series overweights winter, so the winter months read as low.
+    assert ytd_without.relative_error < -0.2  # type: ignore[operator]
+    assert ytd_with.relative_error == pytest.approx(0.0, abs=1e-6)
+
+
+def test_day_missing_horizontal_irradiance_is_dropped() -> None:
+    frame = _make_two_irradiance_frame(
+        "2021-01-01", periods=365 * 2, tilted_weight=0.6, horizontal_weight=0.9
+    )
+    missing_day = pd.Timestamp("2022-06-03", tz="UTC")
+    frame.loc[missing_day, const.SOLAR_RADIATION_HORIZONTAL] = float("nan")
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+    result_2022 = [result for result in output.yearly_results if result.year == 2022][0]
+
+    expected_actual = float(
+        frame.loc[frame.index.year == 2022, const.ELECTRICITY_PRODUCED]
+        .drop(index=missing_day)
+        .sum()
+    )
+    assert result_2022.actual_production == pytest.approx(expected_actual)
+    assert result_2022.predicted_production == pytest.approx(expected_actual)
+    assert result_2022.complete_year is False
+
+
+def test_empty_horizontal_column_falls_back_to_tilted_only() -> None:
+    frame = _make_daily_frame("2021-01-01", periods=365 * 2, production_factor=2.0)
+    reference = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+    frame[const.SOLAR_RADIATION_HORIZONTAL] = float("nan")
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+
+    assert output.regression_diagnostics.coefficient == pytest.approx(2.0)
+    assert output.regression_diagnostics.coefficient_horizontal is None
+    assert output.yearly_results == reference.yearly_results
+
+
+def test_horizontal_coefficient_serialises_with_api_alias() -> None:
+    frame = _make_two_irradiance_frame(
+        "2021-01-01", periods=365 * 2, tilted_weight=0.6, horizontal_weight=0.9
+    )
+
+    dumped = LongTermPVAnalyzer().analyze(_make_input_model(frame)).model_dump(by_alias=True)
+
+    assert dumped["regressionDiagnostics"]["coefficientHorizontal"] == pytest.approx(0.9)
+    tilted_only = _make_daily_frame("2021-01-01", periods=365 * 2)
+    dumped = LongTermPVAnalyzer().analyze(_make_input_model(tilted_only)).model_dump(by_alias=True)
+    assert dumped["regressionDiagnostics"]["coefficientHorizontal"] is None

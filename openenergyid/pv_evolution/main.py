@@ -1,4 +1,7 @@
-"""Long-term PV evolution analysis implementation."""
+"""Long-term PV evolution analysis implementation.
+
+The method is described in ``docs/specs/pv-long-term-evolution.md``.
+"""
 
 import datetime as dt
 
@@ -7,6 +10,7 @@ import pandas as pd
 from openenergyid import const
 from openenergyid.utils import (
     fit_linear_regression,
+    linear_regression_coefficients,
     linear_regression_diagnostics,
     predict_linear_regression,
 )
@@ -21,7 +25,20 @@ from .models import (
 
 
 class LongTermPVAnalyzer:
-    """Analyze long-term PV production using a month-like baseline regression model."""
+    """Analyze long-term PV production using a month-like baseline regression model.
+
+    Production in a reference (baseline) period is regressed on irradiance, summed
+    per month-like bucket, without intercept and with non-negative coefficients.
+    Each calendar year is then predicted from its own monthly irradiance and
+    compared with the actual production.
+
+    The predictor is `solar_radiation` (tilted-plane irradiance). When the input
+    also carries `solar_radiation_horizontal`, both series are used, so each
+    system gets a non-negative mix of the two. The mix lets the model follow the
+    system's own seasonal profile, which a single tilted series cannot, and
+    removes most of the seasonal bias of an incomplete year. See
+    ``docs/specs/pv-long-term-evolution.md``.
+    """
 
     minimum_bucket_days = 25
     maximum_bucket_days = 35
@@ -33,6 +50,19 @@ class LongTermPVAnalyzer:
         frame = input_data.to_pandas(timezone=input_data.timezone).sort_index().copy()
         frame.index = frame.index.normalize()  # type: ignore
         return frame
+
+    def _predictor_columns(self, frame: pd.DataFrame) -> list[str]:
+        """Return the irradiance columns used as regression predictors.
+
+        The horizontal series is used only when present with at least one value;
+        otherwise the model falls back to the single tilted series.
+        """
+        if (
+            const.SOLAR_RADIATION_HORIZONTAL in frame.columns
+            and frame[const.SOLAR_RADIATION_HORIZONTAL].notna().any()
+        ):
+            return [const.SOLAR_RADIATION, const.SOLAR_RADIATION_HORIZONTAL]
+        return [const.SOLAR_RADIATION]
 
     def _default_baseline_period(self, first_day: dt.date) -> tuple[dt.date, dt.date]:
         """Return the default first-12-month baseline period."""
@@ -75,7 +105,7 @@ class LongTermPVAnalyzer:
         buckets, we:
 
         1. First remove baseline days that are unusable for regression because
-           either `solar_radiation` or `electricity_produced` is missing.
+           an irradiance predictor or `electricity_produced` is missing.
         2. Partition the remaining valid baseline days, in chronological order,
            into contiguous buckets.
         3. Require those bucket sizes to stay in a month-like range of 25-35 days.
@@ -139,13 +169,15 @@ class LongTermPVAnalyzer:
         baseline_frame: pd.DataFrame,
         baseline_start: dt.date,
         baseline_end: dt.date,
+        predictors: list[str] | None = None,
     ) -> bool:
         """Return whether the baseline slice has every day and no missing regression inputs."""
+        columns = [*(predictors or [const.SOLAR_RADIATION]), const.ELECTRICITY_PRODUCED]
         expected_days = (baseline_end - baseline_start).days + 1
         if len(baseline_frame) != expected_days:
             return False
 
-        if baseline_frame[[const.SOLAR_RADIATION, const.ELECTRICITY_PRODUCED]].isna().any().any():
+        if baseline_frame[columns].isna().any().any():
             return False
 
         baseline_index = baseline_frame.index
@@ -158,8 +190,11 @@ class LongTermPVAnalyzer:
         frame: pd.DataFrame,
         baseline_start: dt.date,
         baseline_end: dt.date,
+        predictors: list[str] | None = None,
     ) -> pd.DataFrame:
         """Aggregate usable baseline days into month-like regression buckets."""
+        predictors = predictors or [const.SOLAR_RADIATION]
+        columns = [*predictors, const.ELECTRICITY_PRODUCED]
         frame_tz = frame.index.tz  # type: ignore
         assert frame_tz is not None
 
@@ -167,7 +202,7 @@ class LongTermPVAnalyzer:
         end_ts = pd.Timestamp(baseline_end, tz=frame_tz)
         baseline_frame = frame.loc[
             start_ts:end_ts,
-            [const.SOLAR_RADIATION, const.ELECTRICITY_PRODUCED],
+            columns,
         ]
 
         # The common happy path is a full 12-month baseline with complete data.
@@ -181,12 +216,11 @@ class LongTermPVAnalyzer:
             baseline_frame,
             baseline_start=baseline_start,
             baseline_end=baseline_end,
+            predictors=predictors,
         ):
             return baseline_frame.resample("MS").sum()
 
-        baseline_frame = baseline_frame.dropna(
-            subset=[const.SOLAR_RADIATION, const.ELECTRICITY_PRODUCED]
-        )
+        baseline_frame = baseline_frame.dropna(subset=columns)
         baseline_index = baseline_frame.index
         bucket_count = self._choose_bucket_count(len(baseline_index))
         bucket_sizes = self._bucket_sizes(len(baseline_index), bucket_count)
@@ -207,7 +241,7 @@ class LongTermPVAnalyzer:
             # bucket represents a balanced amount of usable data rather than a
             # calendar slice that may be mostly outage.
             .assign(bucket=bucket_labels)
-            .groupby("bucket", sort=True)[[const.SOLAR_RADIATION, const.ELECTRICITY_PRODUCED]]
+            .groupby("bucket", sort=True)[columns]
             .sum()
         )
 
@@ -231,31 +265,40 @@ class LongTermPVAnalyzer:
     def analyze(self, input_data: PVLongTermAnalysisInput) -> PVLongTermAnalysisOutput:
         """Run the analysis and return typed yearly metrics and diagnostics."""
         frame = self._prepare_daily_frame(input_data)
-        # A day without solar radiation cannot contribute to the regression
-        # predictor, so we exclude the whole day from analysis even if production
-        # happened to be present.
-        frame = frame.dropna(subset=[const.SOLAR_RADIATION]).copy()
+        predictors = self._predictor_columns(frame)
+        # A day without irradiance cannot contribute to the regression predictors,
+        # so we exclude the whole day from analysis even if production happened to
+        # be present. With two predictors, a day needs both.
+        frame = frame.dropna(subset=predictors).copy()
         if frame.empty:
             raise ValueError("Input must contain at least one day with solar_radiation data.")
         baseline_start, baseline_end = self._resolve_baseline_period(input_data, frame)
 
         reference = self._reference_dataset(
-            frame, baseline_start=baseline_start, baseline_end=baseline_end
+            frame,
+            baseline_start=baseline_start,
+            baseline_end=baseline_end,
+            predictors=predictors,
         )
+        # No intercept and non-negative weights: production is a non-negative mix
+        # of the irradiance series. The predictors are strongly correlated, so an
+        # unconstrained fit could return large weights of opposite sign that cancel
+        # on the reference period and extrapolate badly to other years.
         regression = fit_linear_regression(
             reference,
-            x_name=const.SOLAR_RADIATION,
+            x_name=predictors,
             y_name=const.ELECTRICITY_PRODUCED,
             positive=True,
             fit_intercept=False,
         )
 
-        coefficient, intercept, r_squared = linear_regression_diagnostics(
+        _, intercept, r_squared = linear_regression_diagnostics(
             regression,
             reference,
-            x_name=const.SOLAR_RADIATION,
+            x_name=predictors,
             y_name=const.ELECTRICITY_PRODUCED,
         )
+        coefficients = linear_regression_coefficients(regression, predictors)
 
         yearly_results: list[PVYearResult] = []
         year_index = frame.index.year  # type: ignore
@@ -276,9 +319,8 @@ class LongTermPVAnalyzer:
             actual_monthly = (
                 yearly_frame[const.ELECTRICITY_PRODUCED].fillna(0.0).resample("MS").sum()
             )
-            solar_monthly = (
-                yearly_frame[const.SOLAR_RADIATION]
-                .dropna()
+            irradiance_monthly = (
+                yearly_frame[predictors]
                 .resample("MS")
                 .sum()
                 .reindex(actual_monthly.index, fill_value=0.0)
@@ -286,8 +328,8 @@ class LongTermPVAnalyzer:
 
             prediction_series = predict_linear_regression(
                 regression,
-                pd.DataFrame({const.SOLAR_RADIATION: solar_monthly}),
-                x_name=const.SOLAR_RADIATION,
+                irradiance_monthly,
+                x_name=predictors,
             )
 
             actual = float(actual_monthly.sum())
@@ -317,7 +359,8 @@ class LongTermPVAnalyzer:
             baseline_period=PVBaselinePeriod(start=baseline_start, end=baseline_end),
             yearly_results=yearly_results,
             regression_diagnostics=PVRegressionDiagnostics(
-                coefficient=coefficient,
+                coefficient=coefficients[const.SOLAR_RADIATION],
+                coefficient_horizontal=coefficients.get(const.SOLAR_RADIATION_HORIZONTAL),
                 intercept=intercept,
                 r_squared=r_squared,
             ),

@@ -122,7 +122,17 @@ class PVYearResult(BaseModel):
 class PVRegressionDiagnostics(BaseModel):
     """Linear regression diagnostics for the reference model."""
 
-    coefficient: float
+    coefficient: float = Field(
+        description="Weight of `solar_radiation` (tilted-plane irradiance) in the model."
+    )
+    coefficient_horizontal: float | None = Field(
+        default=None,
+        serialization_alias="coefficientHorizontal",
+        description=(
+            "Weight of `solar_radiation_horizontal`. None when the input has no "
+            "horizontal irradiance and the model uses the tilted series only."
+        ),
+    )
     intercept: float
     r_squared: float = Field(serialization_alias="rSquared")
 
