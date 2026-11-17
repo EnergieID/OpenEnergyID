@@ -111,7 +111,7 @@ class PVYearResult(BaseModel):
         serialization_alias="relativeError",
         description=(
             "(actual - predicted) / predicted, so -1 means no production at all. "
-            "None when the prediction is not positive and there was production."
+            "None when the prediction is zero (no irradiance) and there was production."
         ),
     )
     complete_year: bool = Field(serialization_alias="completeYear")

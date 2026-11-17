@@ -5,7 +5,6 @@ import pytest
 
 from openenergyid import TimeDataFrame, const
 from openenergyid.pv_evolution import LongTermPVAnalyzer, PVLongTermAnalysisInput
-from openenergyid.pv_evolution import main as main_module
 
 
 def _make_daily_frame(
@@ -377,23 +376,17 @@ def test_relative_error_is_bounded_below_by_minus_one() -> None:
     [(0.0, 0.0), (1.0, None)],
     ids=["no-production", "production"],
 )
-def test_non_positive_prediction_has_no_ratio(
-    monkeypatch: pytest.MonkeyPatch, actual_factor: float, expected: float | None
-) -> None:
+def test_zero_prediction_has_no_ratio(actual_factor: float, expected: float | None) -> None:
     frame = _make_daily_frame("2021-01-01", periods=365 * 2, production_factor=2.0)
+    # An irradiance sensor stuck at zero: the only way to predict nothing, since the
+    # fit has no intercept and non-negative weights.
+    frame.loc[frame.index.year == 2022, const.SOLAR_RADIATION] = 0.0  # type: ignore[index]
     frame.loc[frame.index.year == 2022, const.ELECTRICITY_PRODUCED] *= actual_factor  # type: ignore[index]
-
-    # A fitted negative intercept can predict a negative total for a dark year.
-    monkeypatch.setattr(
-        main_module,
-        "predict_linear_regression",
-        lambda _regression, frame, x_name: pd.Series(-1.0, index=frame.index),
-    )
 
     output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
 
     result_2022 = [result for result in output.yearly_results if result.year == 2022][0]
-    assert result_2022.predicted_production < 0
+    assert result_2022.predicted_production == 0
     assert result_2022.relative_error == expected
 
 
