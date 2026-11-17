@@ -25,10 +25,51 @@ from .const import (
 
 TOTAL_GRID_CONNECTION = "gridconnectiontype='Total'"
 
+# ods209 is published with a delay of up to a day. A range that starts this many days
+# before today, or earlier, must return rows.
+PUBLICATION_DELAY_DAYS = 2
+
 
 def _check_response(data, dataset: str) -> None:
     if not isinstance(data, list):
         raise TypeError(f"Unexpected response from Elia for {dataset}: {data}")
+
+
+def _brussels_today() -> dt.date:
+    return pd.Timestamp.now(tz="Europe/Brussels").date()
+
+
+def _check_members(
+    data: list[dict],
+    members: tuple[str, ...],
+    dataset: str,
+    start: dt.date,
+    end: dt.date,
+    require_data: bool,
+) -> None:
+    """
+    Raise when Elia's answer no longer matches the names we query.
+
+    A renamed region, or a dropped `Total` row, does not make the query fail: it just
+    matches fewer rows. Without this check that would turn into a series with gaps, or
+    an empty one, which callers read as no production.
+    """
+    if not data:
+        if require_data:
+            raise ValueError(
+                f"Elia {dataset} returned no rows with {TOTAL_GRID_CONNECTION} for "
+                f"regions {list(members)} between {start} and {end}. "
+                "Elia may have renamed the regions or the grid connection type."
+            )
+        return
+    returned = {row.get("region") for row in data}
+    missing = [member for member in members if member not in returned]
+    if missing:
+        raise ValueError(
+            f"Elia {dataset} returned no rows for regions {missing} between {start} and "
+            f"{end}, but did for {sorted(str(r) for r in returned)}. "
+            "Elia may have renamed these regions."
+        )
 
 
 def _to_number(values: pd.Series) -> pd.Series:
@@ -73,6 +114,7 @@ async def _get_member_load_factors(
     region: Region,
     session: aiohttp.ClientSession,
     timezone: str,
+    require_data: bool,
 ) -> pd.Series:
     members = PV_REGION_MEMBERS[region]
     data = await get_dataset(
@@ -82,11 +124,12 @@ async def _get_member_load_factors(
         region=region,
         regions=members,
         extra_where=TOTAL_GRID_CONNECTION,
-        select={production_field, "monitoredcapacity"},
+        select={production_field, "monitoredcapacity", "region"},
         session=session,
         timezone=timezone,
     )
     _check_response(data, dataset)
+    _check_members(data, members, dataset, start, end, require_data)
     return _load_factor_from_members(
         data=data,
         production_field=production_field,
@@ -128,21 +171,28 @@ async def get_pv_load_factors(
 
     Both `start` and `end` are inclusive days. Days before 2026-10-26 come from ods032,
     later days from ods209.
+
+    Raises ValueError when ods209 answers without one of the regions that make up
+    `region`, or without any row for a range that starts more than a day ago: both mean
+    Elia changed a name this module relies on.
     """
     parts: list[pd.Series] = []
     if start < PV_DATASET_CUTOVER:
         legacy_end = min(end, PV_DATASET_CUTOVER - dt.timedelta(days=1))
         parts.append(await _get_legacy_load_factors(start, legacy_end, region, session, timezone))
     if end >= PV_DATASET_CUTOVER:
+        new_start = max(start, PV_DATASET_CUTOVER)
         parts.append(
             await _get_member_load_factors(
                 dataset=PV_HISTORICAL_DATASET,
                 production_field="measured_upscaled",
-                start=max(start, PV_DATASET_CUTOVER),
+                start=new_start,
                 end=end,
                 region=region,
                 session=session,
                 timezone=timezone,
+                require_data=new_start
+                <= _brussels_today() - dt.timedelta(days=PUBLICATION_DELAY_DAYS),
             )
         )
 
@@ -165,7 +215,8 @@ async def get_pv_load_factor_forecast(
     Most recent PV forecast as a load factor (percent of monitored capacity), from ods210.
 
     ods210 is a rolling window of roughly the past week to six days ahead; days outside
-    it return nothing.
+    it return nothing. Raises ValueError when the answer lacks one of the regions that
+    make up `region`.
     """
     return await _get_member_load_factors(
         dataset=PV_NEAR_REALTIME_DATASET,
@@ -175,4 +226,5 @@ async def get_pv_load_factor_forecast(
         region=region,
         session=session,
         timezone=timezone,
+        require_data=False,
     )

@@ -190,3 +190,118 @@ def test_error_response_raises(fake):
 
 def test_every_region_has_members():
     assert set(PV_REGION_MEMBERS) == set(Region)
+
+
+def test_renamed_region_raises(fake):
+    # Elia renames one province: the query still succeeds, it just lacks that province.
+    renamed = [
+        "Oost-Vlaanderen" if p == "OostVlaanderen" else p
+        for p in PV_REGION_MEMBERS[Region.Flanders]
+    ]
+    fake({"ods209": _rows("2026-11-02T12:00:00+01:00", renamed, "measured_upscaled", 1.0, 10.0)})
+
+    with pytest.raises(ValueError, match="OostVlaanderen"):
+        _run(
+            elia.get_pv_load_factors(
+                dt.date(2026, 11, 2), dt.date(2026, 11, 2), Region.Flanders, None
+            )
+        )
+
+
+def test_no_rows_for_a_past_range_raises(fake):
+    # What a dropped `Total` row, or every region renamed, looks like.
+    fake({"ods209": []})
+
+    with pytest.raises(ValueError, match="Total"):
+        _run(
+            elia.get_pv_load_factors(
+                dt.date(2026, 11, 2), dt.date(2026, 11, 3), Region.Belgium, None
+            )
+        )
+
+
+def test_no_rows_for_a_range_not_yet_published_is_empty(fake, monkeypatch):
+    monkeypatch.setattr(pv_module, "_brussels_today", lambda: dt.date(2026, 11, 17))
+    fake({"ods209": []})
+
+    result = _run(
+        elia.get_pv_load_factors(dt.date(2026, 11, 16), dt.date(2026, 11, 17), Region.Belgium, None)
+    )
+
+    assert result.empty
+
+
+def test_forecast_outside_its_window_is_empty(fake):
+    fake({"ods210": []})
+
+    result = _run(
+        elia.get_pv_load_factor_forecast(
+            dt.date(2026, 11, 2), dt.date(2026, 11, 2), Region.Belgium, None
+        )
+    )
+
+    assert result.empty
+
+
+class FakeSession:
+    """Stands in for aiohttp.ClientSession and records the request get_dataset builds."""
+
+    def __init__(self):
+        self.requests: list[tuple[str, dict]] = []
+
+    def get(self, url, params):
+        self.requests.append((url, params))
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def json(self):
+        return []
+
+
+def test_query_selects_member_regions_and_total_rows():
+    session = FakeSession()
+
+    _run(
+        elia.get_pv_load_factor_forecast(
+            dt.date(2026, 11, 5), dt.date(2026, 11, 12), Region.Wallonia, session
+        )
+    )
+
+    ((url, params),) = session.requests
+    assert url.endswith("/datasets/ods210/exports/json")
+    assert params["where"] == (
+        "datetime IN [date'2026-11-05'..date'2026-11-12'] "
+        "AND region IN ('BrabantWallon','Hainaut','Liege','Luxembourg','Namur') "
+        "AND gridconnectiontype='Total'"
+    )
+    assert set(params["select"].split(",")) == {
+        "datetime",
+        "region",
+        "mostrecentforecast",
+        "monitoredcapacity",
+    }
+
+
+def test_legacy_query_filters_on_the_region_value():
+    session = FakeSession()
+
+    _run(
+        elia.get_dataset(
+            dataset="ods032",
+            start=dt.date(2026, 10, 1),
+            end=dt.date(2026, 10, 2),
+            region=Region.Walloon_Brabant,
+            select={"loadfactor"},
+            session=session,  # type: ignore[arg-type]
+        )
+    )
+
+    ((_, params),) = session.requests
+    assert params["where"] == (
+        "datetime IN [date'2026-10-01'..date'2026-10-02'] AND region='Walloon-Brabant'"
+    )
