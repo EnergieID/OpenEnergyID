@@ -352,6 +352,7 @@ class LongTermPVAnalyzer:
         points: list[tuple[int, float, float | None]],
         reference_year: int | None,
         reference_noise: float | None,
+        warnings: list[PVWarning],
     ) -> PVTrend | None:
         """Fit a straight line through `(year, relative error, noise)` of complete years.
 
@@ -362,8 +363,8 @@ class LongTermPVAnalyzer:
         The fit is weighted by `1 / σ²`. Its standard error is scaled up by the
         scatter of the points around the line when that scatter is larger than the
         uncertainties predict, so year-to-year noise the monthly residuals miss is
-        not hidden. Without uncertainties, the fit is unweighted and the standard
-        error comes from the scatter alone.
+        not hidden. Without uncertainties, the fit is unweighted, the standard
+        error comes from the scatter alone, and a `trend_unweighted` warning is added.
         """
         points = list(points)
         if reference_year is not None and all(year != reference_year for year, _, _ in points):
@@ -377,6 +378,19 @@ class LongTermPVAnalyzer:
         sigmas = [sigma for _, _, sigma in points]
         weighted = all(sigma is not None and sigma > 0 for sigma in sigmas)
         weights = 1 / np.array(sigmas, dtype=float) ** 2 if weighted else np.ones(len(points))
+        if not weighted:
+            unweighted_years = [year for year, _, sigma in points if sigma is None or sigma <= 0]
+            warnings.append(
+                PVWarning(
+                    code=PVWarningCode.TREND_UNWEIGHTED,
+                    message=(
+                        "The trend is an unweighted fit: years "
+                        f"{', '.join(str(year) for year in unweighted_years)} have no "
+                        "uncertainty, so its standard error comes from the scatter alone."
+                    ),
+                    context={"years": unweighted_years},
+                )
+            )
 
         mean_year = float(np.sum(weights * years) / np.sum(weights))
         mean_value = float(np.sum(weights * values) / np.sum(weights))
@@ -512,6 +526,13 @@ class LongTermPVAnalyzer:
                 )
             )
 
+        trend = self._trend(
+            trend_points,
+            reference_year=reference_year,
+            reference_noise=reference_noise,
+            warnings=warnings,
+        )
+
         return PVLongTermAnalysisOutput(
             reference=input_data.reference,
             baseline_period=PVBaselinePeriod(start=baseline_start, end=baseline_end),
@@ -522,8 +543,6 @@ class LongTermPVAnalyzer:
                 intercept=intercept,
                 r_squared=r_squared,
             ),
-            trend=self._trend(
-                trend_points, reference_year=reference_year, reference_noise=reference_noise
-            ),
+            trend=trend,
             warnings=warnings,
         )

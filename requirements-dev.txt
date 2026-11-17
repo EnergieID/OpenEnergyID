@@ -242,6 +242,7 @@ numpy==2.2.6 ; python_full_version < '3.14'
     #   contourpy
     #   h5py
     #   matplotlib
+    #   openenergyid
     #   pandas
     #   pandas-stubs
     #   patsy
@@ -255,6 +256,7 @@ numpy==2.5.3 ; python_full_version >= '3.14'
     #   contourpy
     #   h5py
     #   matplotlib
+    #   openenergyid
     #   pandas
     #   pandas-stubs
     #   patsy

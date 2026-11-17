@@ -98,6 +98,7 @@ class PVWarningCode(StrEnum):
     """Machine-readable reasons why part of the input was not used."""
 
     HORIZONTAL_IRRADIANCE_INCOMPLETE = "horizontal_irradiance_incomplete"
+    TREND_UNWEIGHTED = "trend_unweighted"
 
 
 class PVWarning(BaseModel):

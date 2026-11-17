@@ -675,9 +675,13 @@ def test_trend_and_uncertainty_are_calibrated() -> None:
             )
 
     assert np.mean(slopes) == pytest.approx(DECLINE_PER_YEAR, abs=0.002)
-    # One standard deviation should hold about 68% of the outcomes.
-    assert 0.55 <= np.mean(slope_within_one_sigma) <= 0.85
-    assert 0.55 <= np.mean(year_within_one_sigma) <= 0.85
+    # One standard deviation should hold about 68% of the outcomes. Over 100 draws that
+    # share has a standard error of about 5%, so the band is 68% plus or minus two of
+    # those. The seeds are fixed, so the test is not flaky: today it measures 70% for
+    # the slope and 64.5% for the years. The slope sits a little above 68% on purpose,
+    # since its error is never scaled below what the uncertainties give.
+    assert 0.60 <= np.mean(slope_within_one_sigma) <= 0.78
+    assert 0.60 <= np.mean(year_within_one_sigma) <= 0.78
 
 
 def test_trend_counts_calendar_reference_year_as_zero() -> None:
@@ -726,6 +730,16 @@ def test_perfect_fit_has_zero_uncertainty_and_unweighted_trend() -> None:
     assert output.trend is not None
     assert output.trend.slope == pytest.approx(0.0, abs=1e-12)
     assert output.trend.slope_standard_error == pytest.approx(0.0, abs=1e-12)
+    (warning,) = output.warnings
+    assert warning.code == PVWarningCode.TREND_UNWEIGHTED
+    assert warning.context["years"] == [2021, 2022, 2023, 2024]
+
+
+def test_weighted_trend_has_no_warning() -> None:
+    output = LongTermPVAnalyzer().analyze(_make_input_model(_make_declining_frame(seed=4)))
+
+    assert output.trend is not None
+    assert output.warnings == []
 
 
 def test_uncertainty_and_trend_serialise_with_api_aliases() -> None:
