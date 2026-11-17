@@ -6,6 +6,8 @@ from .models import (
     PVLongTermAnalysisInput,
     PVLongTermAnalysisOutput,
     PVRegressionDiagnostics,
+    PVWarning,
+    PVWarningCode,
     PVYearResult,
 )
 
@@ -16,4 +18,6 @@ __all__ = [
     "PVLongTermAnalysisOutput",
     "PVYearResult",
     "PVRegressionDiagnostics",
+    "PVWarning",
+    "PVWarningCode",
 ]
