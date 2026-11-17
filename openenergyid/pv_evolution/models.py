@@ -1,6 +1,7 @@
 """Pydantic models for long-term PV evolution analysis."""
 
 import datetime as dt
+from enum import StrEnum
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -93,6 +94,20 @@ class PVLongTermAnalysisInput(TimeDataFrame):
         return self
 
 
+class PVWarningCode(StrEnum):
+    """Machine-readable reasons why part of the input was not used."""
+
+    HORIZONTAL_IRRADIANCE_INCOMPLETE = "horizontal_irradiance_incomplete"
+
+
+class PVWarning(BaseModel):
+    """A caveat attached to the analysis."""
+
+    code: PVWarningCode
+    message: str
+    context: dict = Field(default_factory=dict)
+
+
 class PVBaselinePeriod(BaseModel):
     """Actual inclusive baseline period used for the analysis."""
 
@@ -111,7 +126,7 @@ class PVYearResult(BaseModel):
         serialization_alias="relativeError",
         description=(
             "(actual - predicted) / predicted, so -1 means no production at all. "
-            "None when the prediction is not positive and there was production."
+            "None when the prediction is zero (no irradiance) and there was production."
         ),
     )
     complete_year: bool = Field(serialization_alias="completeYear")
@@ -186,5 +201,6 @@ class PVLongTermAnalysisOutput(BaseModel):
         default=None,
         description="Trend over the complete years. None with fewer than three usable years.",
     )
+    warnings: list[PVWarning] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)

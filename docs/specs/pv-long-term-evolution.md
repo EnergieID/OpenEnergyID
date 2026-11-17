@@ -26,8 +26,10 @@ One row per local calendar day, with:
 | `solar_radiation_horizontal` | global horizontal irradiance, same unit | no |
 
 A day without irradiance cannot be predicted, so it is dropped from both the actual and the
-predicted totals. When `solar_radiation_horizontal` is used, a day needs both series. A day
-without production is left out of the reference fit, but counts as zero in the yearly totals
+predicted totals. When `solar_radiation_horizontal` is used, a day needs both series; the days
+that have the tilted series but not the horizontal one are reported in a
+`horizontal_irradiance_incomplete` warning, since a horizontal series that starts late removes
+whole years. A day without production is left out of the reference fit, but counts as zero in the yearly totals
 (an outage is real lost production).
 
 ### 2. Reference period and buckets

@@ -23,6 +23,8 @@ from .models import (
     PVLongTermAnalysisOutput,
     PVRegressionDiagnostics,
     PVTrend,
+    PVWarning,
+    PVWarningCode,
     PVYearResult,
 )
 
@@ -71,6 +73,41 @@ class LongTermPVAnalyzer:
         ):
             return [const.SOLAR_RADIATION, const.SOLAR_RADIATION_HORIZONTAL]
         return [const.SOLAR_RADIATION]
+
+    def _horizontal_gap_warnings(
+        self, frame: pd.DataFrame, predictors: list[str]
+    ) -> list[PVWarning]:
+        """Warn about days left out only because the horizontal series is missing.
+
+        With two predictors a day needs both, so a horizontal series that starts later
+        than the tilted one removes the earlier days, and possibly whole years.
+        """
+        if const.SOLAR_RADIATION_HORIZONTAL not in predictors:
+            return []
+        gaps = frame[const.SOLAR_RADIATION].notna() & frame[const.SOLAR_RADIATION_HORIZONTAL].isna()
+        if not gaps.any():
+            return []
+        gap_days = frame.index[gaps]
+        days_per_year = {
+            int(year): int(count)
+            for year, count in gap_days.year.value_counts().sort_index().items()
+        }  # type: ignore[attr-defined]
+        per_year = ", ".join(f"{year}: {count}" for year, count in days_per_year.items())
+        return [
+            PVWarning(
+                code=PVWarningCode.HORIZONTAL_IRRADIANCE_INCOMPLETE,
+                message=(
+                    f"Left out {len(gap_days)} days that have {const.SOLAR_RADIATION} but no "
+                    f"{const.SOLAR_RADIATION_HORIZONTAL} ({per_year})."
+                ),
+                context={
+                    "days": len(gap_days),
+                    "first_day": gap_days[0].date(),
+                    "last_day": gap_days[-1].date(),
+                    "days_per_year": days_per_year,
+                },
+            )
+        ]
 
     def _default_baseline_period(self, first_day: dt.date) -> tuple[dt.date, dt.date]:
         """Return the default first-12-month baseline period."""
@@ -367,6 +404,7 @@ class LongTermPVAnalyzer:
         """Run the analysis and return typed yearly metrics and diagnostics."""
         frame = self._prepare_daily_frame(input_data)
         predictors = self._predictor_columns(frame)
+        warnings = self._horizontal_gap_warnings(frame, predictors)
         # A day without irradiance cannot contribute to the regression predictors,
         # so we exclude the whole day from analysis even if production happened to
         # be present. With two predictors, a day needs both.
@@ -444,8 +482,9 @@ class LongTermPVAnalyzer:
             prediction = float(prediction_series.sum())
             error = actual - prediction
             # Relative to the prediction, so a year with an outage bottoms out at -100%
-            # instead of dividing by a near-zero actual. A non-positive prediction
-            # (possible with a negative intercept) has no meaningful ratio.
+            # instead of dividing by a near-zero actual. The fit has no intercept and
+            # non-negative weights, so the prediction is never negative. It is zero only
+            # when the year's irradiance is all zero, and then there is no ratio.
             if prediction > 0:
                 relative_error = error / prediction
             else:
@@ -486,4 +525,5 @@ class LongTermPVAnalyzer:
             trend=self._trend(
                 trend_points, reference_year=reference_year, reference_noise=reference_noise
             ),
+            warnings=warnings,
         )

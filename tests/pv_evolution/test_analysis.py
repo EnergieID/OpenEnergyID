@@ -3,10 +3,14 @@ import datetime as dt
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.linear_model import LinearRegression
 
 from openenergyid import TimeDataFrame, const
-from openenergyid.pv_evolution import LongTermPVAnalyzer, PVLongTermAnalysisInput
-from openenergyid.pv_evolution import main as main_module
+from openenergyid.pv_evolution import (
+    LongTermPVAnalyzer,
+    PVLongTermAnalysisInput,
+    PVWarningCode,
+)
 
 
 def _make_daily_frame(
@@ -378,23 +382,17 @@ def test_relative_error_is_bounded_below_by_minus_one() -> None:
     [(0.0, 0.0), (1.0, None)],
     ids=["no-production", "production"],
 )
-def test_non_positive_prediction_has_no_ratio(
-    monkeypatch: pytest.MonkeyPatch, actual_factor: float, expected: float | None
-) -> None:
+def test_zero_prediction_has_no_ratio(actual_factor: float, expected: float | None) -> None:
     frame = _make_daily_frame("2021-01-01", periods=365 * 2, production_factor=2.0)
+    # An irradiance sensor stuck at zero: the only way to predict nothing, since the
+    # fit has no intercept and non-negative weights.
+    frame.loc[frame.index.year == 2022, const.SOLAR_RADIATION] = 0.0  # type: ignore[index]
     frame.loc[frame.index.year == 2022, const.ELECTRICITY_PRODUCED] *= actual_factor  # type: ignore[index]
-
-    # A fitted negative intercept can predict a negative total for a dark year.
-    monkeypatch.setattr(
-        main_module,
-        "predict_linear_regression",
-        lambda _regression, frame, x_name: pd.Series(-1.0, index=frame.index),
-    )
 
     output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
 
     result_2022 = [result for result in output.yearly_results if result.year == 2022][0]
-    assert result_2022.predicted_production < 0
+    assert result_2022.predicted_production == 0
     assert result_2022.relative_error == expected
 
 
@@ -481,6 +479,40 @@ def test_two_irradiance_weights_are_never_negative(
     assert diagnostics.coefficient_horizontal >= 0  # type: ignore[operator]
 
 
+def test_noisy_collinear_irradiance_gets_no_negative_weight() -> None:
+    # Clouds move both series together, so they are nearly collinear, and production
+    # follows the tilted series with 15% daily noise. On this reference year an
+    # unconstrained fit trades a negative horizontal weight against a larger tilted one.
+    rng = np.random.default_rng(5)
+    index = pd.date_range("2021-01-01", periods=365 * 2, freq="D", tz="UTC")
+    season = (1 - np.cos(2 * np.pi * (index.dayofyear - 1) / 365.25)) / 2
+    cloud = rng.uniform(0.3, 1.0, len(index))
+    tilted = (2000.0 + 3000.0 * season) * cloud
+    horizontal = (500.0 + 5000.0 * season) * cloud
+    frame = pd.DataFrame(
+        {
+            const.SOLAR_RADIATION: tilted,
+            const.SOLAR_RADIATION_HORIZONTAL: horizontal,
+            const.ELECTRICITY_PRODUCED: tilted * (1 + rng.normal(0, 0.15, len(index))),
+        },
+        index=index,
+    )
+
+    local = frame.tz_convert("Europe/Brussels")
+    local.index = local.index.normalize()
+    reference = local.loc["2021-01-01":"2021-12-31"].resample("MS").sum()
+    predictors = [const.SOLAR_RADIATION, const.SOLAR_RADIATION_HORIZONTAL]
+    unconstrained = LinearRegression(fit_intercept=False).fit(
+        reference[predictors], reference[const.ELECTRICITY_PRODUCED]
+    )
+    assert unconstrained.coef_[1] < -0.05
+
+    diagnostics = LongTermPVAnalyzer().analyze(_make_input_model(frame)).regression_diagnostics
+
+    assert diagnostics.coefficient_horizontal == 0
+    assert diagnostics.coefficient == pytest.approx(1.0, abs=0.01)
+
+
 def test_horizontal_irradiance_removes_seasonal_bias_of_incomplete_year() -> None:
     # A system that follows horizontal irradiance, observed until the end of February.
     frame = _make_two_irradiance_frame(
@@ -518,6 +550,36 @@ def test_day_missing_horizontal_irradiance_is_dropped() -> None:
     assert result_2022.actual_production == pytest.approx(expected_actual)
     assert result_2022.predicted_production == pytest.approx(expected_actual)
     assert result_2022.complete_year is False
+    (warning,) = output.warnings
+    assert warning.code == PVWarningCode.HORIZONTAL_IRRADIANCE_INCOMPLETE
+    assert warning.context["days_per_year"] == {2022: 1}
+
+
+def test_horizontal_series_starting_later_warns_about_the_years_it_drops() -> None:
+    frame = _make_two_irradiance_frame(
+        "2020-01-01", periods=366 + 365 * 2, tilted_weight=0.6, horizontal_weight=0.9
+    )
+    # The horizontal series only starts in 2021: 2020 cannot be used with both.
+    frame.loc[frame.index.year == 2020, const.SOLAR_RADIATION_HORIZONTAL] = float("nan")  # type: ignore[index]
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+
+    assert output.baseline_period.start == dt.date(2021, 1, 1)
+    (warning,) = output.warnings
+    assert warning.code == PVWarningCode.HORIZONTAL_IRRADIANCE_INCOMPLETE
+    assert warning.context["days"] == 366
+    assert warning.context["days_per_year"] == {2020: 366}
+    assert "2020: 366" in warning.message
+
+
+def test_complete_input_has_no_warnings() -> None:
+    two_series = _make_two_irradiance_frame(
+        "2021-01-01", periods=365 * 2, tilted_weight=0.6, horizontal_weight=0.9
+    )
+    tilted_only = _make_daily_frame("2021-01-01", periods=365 * 2)
+
+    assert LongTermPVAnalyzer().analyze(_make_input_model(two_series)).warnings == []
+    assert LongTermPVAnalyzer().analyze(_make_input_model(tilted_only)).warnings == []
 
 
 def test_empty_horizontal_column_falls_back_to_tilted_only() -> None:
