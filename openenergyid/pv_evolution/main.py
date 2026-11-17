@@ -336,8 +336,9 @@ class LongTermPVAnalyzer:
             prediction = float(prediction_series.sum())
             error = actual - prediction
             # Relative to the prediction, so a year with an outage bottoms out at -100%
-            # instead of dividing by a near-zero actual. A non-positive prediction
-            # (possible with a negative intercept) has no meaningful ratio.
+            # instead of dividing by a near-zero actual. The fit has no intercept and
+            # non-negative weights, so the prediction is never negative. It is zero only
+            # when the year's irradiance is all zero, and then there is no ratio.
             if prediction > 0:
                 relative_error = error / prediction
             else:
