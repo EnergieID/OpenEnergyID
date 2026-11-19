@@ -2,6 +2,7 @@
 
 from .regression import (
     fit_linear_regression,
+    linear_regression_coefficients,
     linear_regression_diagnostics,
     predict_linear_regression,
 )
@@ -9,5 +10,6 @@ from .regression import (
 __all__ = [
     "fit_linear_regression",
     "predict_linear_regression",
+    "linear_regression_coefficients",
     "linear_regression_diagnostics",
 ]

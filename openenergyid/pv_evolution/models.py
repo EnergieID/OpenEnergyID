@@ -1,6 +1,7 @@
 """Pydantic models for long-term PV evolution analysis."""
 
 import datetime as dt
+from enum import StrEnum
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -93,6 +94,20 @@ class PVLongTermAnalysisInput(TimeDataFrame):
         return self
 
 
+class PVWarningCode(StrEnum):
+    """Machine-readable reasons why part of the input was not used."""
+
+    HORIZONTAL_IRRADIANCE_INCOMPLETE = "horizontal_irradiance_incomplete"
+
+
+class PVWarning(BaseModel):
+    """A caveat attached to the analysis."""
+
+    code: PVWarningCode
+    message: str
+    context: dict = Field(default_factory=dict)
+
+
 class PVBaselinePeriod(BaseModel):
     """Actual inclusive baseline period used for the analysis."""
 
@@ -122,7 +137,17 @@ class PVYearResult(BaseModel):
 class PVRegressionDiagnostics(BaseModel):
     """Linear regression diagnostics for the reference model."""
 
-    coefficient: float
+    coefficient: float = Field(
+        description="Weight of `solar_radiation` (tilted-plane irradiance) in the model."
+    )
+    coefficient_horizontal: float | None = Field(
+        default=None,
+        serialization_alias="coefficientHorizontal",
+        description=(
+            "Weight of `solar_radiation_horizontal`. None when the input has no "
+            "horizontal irradiance and the model uses the tilted series only."
+        ),
+    )
     intercept: float
     r_squared: float = Field(serialization_alias="rSquared")
 
@@ -138,5 +163,6 @@ class PVLongTermAnalysisOutput(BaseModel):
     regression_diagnostics: PVRegressionDiagnostics = Field(
         serialization_alias="regressionDiagnostics"
     )
+    warnings: list[PVWarning] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)

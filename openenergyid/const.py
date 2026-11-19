@@ -42,3 +42,6 @@ RATIO_SELF_SUFFICIENCY: Literal["ratio_self_sufficiency"] = "ratio_self_sufficie
 # Weather
 
 SOLAR_RADIATION: Literal["solar_radiation"] = "solar_radiation"
+"""Irradiance on a tilted plane, typically 35 degrees facing south."""
+SOLAR_RADIATION_HORIZONTAL: Literal["solar_radiation_horizontal"] = "solar_radiation_horizontal"
+"""Global horizontal irradiance, in the same unit as SOLAR_RADIATION."""
