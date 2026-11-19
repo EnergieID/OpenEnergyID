@@ -39,6 +39,11 @@ dependencies = [
 line-length = 100
 
 [tool.uv]
+# Supply-chain guard: only resolve PyPI files uploaded at least 7 days ago, so a
+# malicious release is usually yanked before we can pick it up. Our own
+# packages are exempt so fresh releases stay installable.
+exclude-newer = "7 days"
+exclude-newer-package = { energy-cost = false, energyid = false }
 default-groups = ["dev"]
 
 [dependency-groups]
