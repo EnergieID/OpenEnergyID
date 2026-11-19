@@ -605,3 +605,154 @@ def test_horizontal_coefficient_serialises_with_api_alias() -> None:
     tilted_only = _make_daily_frame("2021-01-01", periods=365 * 2)
     dumped = LongTermPVAnalyzer().analyze(_make_input_model(tilted_only)).model_dump(by_alias=True)
     assert dumped["regressionDiagnostics"]["coefficientHorizontal"] is None
+
+
+# Uncertainty and trend.
+
+DECLINE_PER_YEAR = -0.01
+MONTHLY_NOISE = 0.05
+
+
+def _make_declining_frame(seed: int, end: str = "2025-12-31") -> pd.DataFrame:
+    """Daily seasonal frame, 2019 onwards, with a steady decline and monthly noise.
+
+    Every day in a month shares one noise factor, so the noise survives the monthly
+    sums the model works on.
+    """
+    index = pd.date_range(start="2019-01-01", end=end, freq="D", tz="UTC")
+    season = (1 - np.cos(2 * np.pi * (index.dayofyear - 1) / 365.25)) / 2
+    tilted = pd.Series(2000.0 + 3000.0 * season, index=index)
+    years_elapsed = (index - index[0]).days / 365.25
+    performance = 1 + DECLINE_PER_YEAR * np.asarray(years_elapsed)
+
+    months = index.year * 12 + index.month
+    unique_months = np.unique(months)
+    noise = np.random.default_rng(seed).normal(0.0, MONTHLY_NOISE, len(unique_months))
+    monthly_factor = pd.Series(1 + noise, index=unique_months).loc[months].to_numpy()
+
+    return pd.DataFrame(
+        {
+            const.SOLAR_RADIATION: tilted,
+            const.ELECTRICITY_PRODUCED: 0.9 * tilted * performance * monthly_factor,
+        },
+        index=index,
+    )
+
+
+def _true_relative_error(frame: pd.DataFrame, year: int, reference_year: int) -> float:
+    """Relative error the noise-free system would show for `year`."""
+    index = frame.index
+    years_elapsed = np.asarray((index - index[0]).days / 365.25)
+    performance = pd.Series(1 + DECLINE_PER_YEAR * years_elapsed, index=index)
+    irradiance = frame[const.SOLAR_RADIATION]
+
+    def mean_performance(selected_year: int) -> float:
+        mask = index.year == selected_year  # type: ignore[attr-defined]
+        return float((performance[mask] * irradiance[mask]).sum() / irradiance[mask].sum())
+
+    return mean_performance(year) / mean_performance(reference_year) - 1
+
+
+def test_trend_and_uncertainty_are_calibrated() -> None:
+    analyzer = LongTermPVAnalyzer()
+    slope_within_one_sigma = []
+    year_within_one_sigma = []
+    slopes = []
+
+    for seed in range(100):
+        frame = _make_declining_frame(seed)
+        output = analyzer.analyze(_make_input_model(frame))
+        trend = output.trend
+        assert trend is not None
+        slopes.append(trend.slope)
+        slope_within_one_sigma.append(
+            abs(trend.slope - DECLINE_PER_YEAR) <= trend.slope_standard_error
+        )
+        for result in output.yearly_results:
+            truth = _true_relative_error(frame, result.year, reference_year=2019)
+            year_within_one_sigma.append(
+                abs(result.relative_error - truth) <= result.relative_error_uncertainty  # type: ignore[operator]
+            )
+
+    assert np.mean(slopes) == pytest.approx(DECLINE_PER_YEAR, abs=0.002)
+    # One standard deviation should hold about 68% of the outcomes. Over 100 draws that
+    # share has a standard error of about 5%, so the band is 68% plus or minus two of
+    # those. The seeds are fixed, so the test is not flaky: today it measures 70% for
+    # the slope and 64.5% for the years. The slope sits a little above 68% on purpose,
+    # since its error is never scaled below what the uncertainties give.
+    assert 0.60 <= np.mean(slope_within_one_sigma) <= 0.78
+    assert 0.60 <= np.mean(year_within_one_sigma) <= 0.78
+
+
+def test_trend_counts_calendar_reference_year_as_zero() -> None:
+    output = LongTermPVAnalyzer().analyze(_make_input_model(_make_declining_frame(seed=1)))
+
+    assert [result.year for result in output.yearly_results] == list(range(2020, 2026))
+    assert output.trend is not None
+    assert output.trend.first_year == 2019
+    assert output.trend.last_year == 2025
+    assert output.trend.year_count == 7
+
+
+def test_incomplete_year_has_wider_uncertainty_and_is_left_out_of_trend() -> None:
+    frame = _make_declining_frame(seed=2, end="2025-02-28")
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+    complete = [result for result in output.yearly_results if result.complete_year]
+    incomplete = output.yearly_results[-1]
+
+    assert incomplete.year == 2025
+    assert incomplete.complete_year is False
+    assert incomplete.relative_error_uncertainty > max(  # type: ignore[operator]
+        result.relative_error_uncertainty  # type: ignore[misc]
+        for result in complete
+    )
+    assert output.trend is not None
+    assert output.trend.last_year == 2024
+
+
+def test_trend_needs_three_years() -> None:
+    frame = _make_declining_frame(seed=3, end="2020-12-31")
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+
+    assert [result.year for result in output.yearly_results] == [2020]
+    assert output.yearly_results[0].relative_error_uncertainty is not None
+    assert output.trend is None
+
+
+def test_perfect_fit_has_zero_uncertainty_and_unweighted_trend() -> None:
+    frame = _make_daily_frame("2021-01-01", periods=365 * 4 + 1, production_factor=2.0)
+
+    output = LongTermPVAnalyzer().analyze(_make_input_model(frame))
+
+    assert all(result.relative_error_uncertainty == 0 for result in output.yearly_results)
+    assert output.trend is not None
+    assert output.trend.slope == pytest.approx(0.0, abs=1e-12)
+    assert output.trend.slope_standard_error == pytest.approx(0.0, abs=1e-12)
+    (warning,) = output.warnings
+    assert warning.code == PVWarningCode.TREND_UNWEIGHTED
+    assert warning.context["years"] == [2021, 2022, 2023, 2024]
+
+
+def test_weighted_trend_has_no_warning() -> None:
+    output = LongTermPVAnalyzer().analyze(_make_input_model(_make_declining_frame(seed=4)))
+
+    assert output.trend is not None
+    assert output.warnings == []
+
+
+def test_uncertainty_and_trend_serialise_with_api_aliases() -> None:
+    output = LongTermPVAnalyzer().analyze(_make_input_model(_make_declining_frame(seed=4)))
+
+    dumped = output.model_dump(by_alias=True)
+
+    assert dumped["yearlyResults"][0]["relativeErrorUncertainty"] > 0
+    assert set(dumped["trend"]) == {
+        "slope",
+        "slopeStandardError",
+        "intercept",
+        "firstYear",
+        "lastYear",
+        "yearCount",
+    }

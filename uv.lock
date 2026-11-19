@@ -1732,6 +1732,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "energy-cost" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "pandas" },
     { name = "pandera", extra = ["polars"] },
     { name = "pvlib" },
@@ -1769,6 +1771,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.12.15" },
     { name = "energy-cost", specifier = ">=0.8.2" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=3.0" },
     { name = "pandera", extras = ["polars"], specifier = ">=0.22.1" },
     { name = "pvlib", specifier = ">=0.13.0" },

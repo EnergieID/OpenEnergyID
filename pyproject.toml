@@ -26,6 +26,7 @@ requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.12.15",
     "energy-cost>=0.8.2",
+    "numpy>=1.26",
     "pandas>=3.0",
     "pandera[polars]>=0.22.1",
     "pvlib>=0.13.0",

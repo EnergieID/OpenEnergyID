@@ -43,6 +43,7 @@ mypy-extensions==1.1.0
 numpy==2.2.6 ; python_full_version < '3.14'
     # via
     #   h5py
+    #   openenergyid
     #   pandas
     #   patsy
     #   pvlib
@@ -52,6 +53,7 @@ numpy==2.2.6 ; python_full_version < '3.14'
 numpy==2.5.3 ; python_full_version >= '3.14'
     # via
     #   h5py
+    #   openenergyid
     #   pandas
     #   patsy
     #   pvlib
