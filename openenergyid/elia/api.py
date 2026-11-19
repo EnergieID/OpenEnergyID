@@ -3,6 +3,7 @@ This module contains the functions to interact with the Elia API.
 """
 
 import datetime as dt
+from collections.abc import Iterable
 
 import aiohttp
 import pandas as pd
@@ -20,6 +21,9 @@ async def get_dataset(
     select: set[str],
     session: aiohttp.ClientSession,
     timezone: str = "Europe/Brussels",
+    *,
+    regions: Iterable[str] | None = None,
+    extra_where: str | None = None,
 ) -> dict:
     """
     Fetches a dataset from the Elia open data API within a specified date range and region.
@@ -32,6 +36,9 @@ async def get_dataset(
         select (set[str]): A set of fields to select in the dataset.
         session (aiohttp.ClientSession): The aiohttp session to use for making the request.
         timezone (str, optional): The timezone to use for the data. Defaults to "Europe/Brussels".
+        regions (Iterable[str], optional): Raw region names to filter on instead of `region`,
+            for datasets whose region names differ from the `Region` values.
+        extra_where (str, optional): An additional ODSQL condition, joined with AND.
 
     Returns:
         dict: The dataset fetched from the API.
@@ -45,11 +52,20 @@ async def get_dataset(
         select.add("datetime")
     select_str = ",".join(select)
 
+    if regions is None:
+        region_filter = f"region='{region.value}'"
+    else:
+        region_filter = "region IN (" + ",".join(f"'{r}'" for r in regions) + ")"
+
+    where = (
+        f"datetime IN [date'{start.strftime(DATE_FORMAT)}'..date'{end.strftime(DATE_FORMAT)}'] "
+        f"AND {region_filter}"
+    )
+    if extra_where:
+        where += f" AND {extra_where}"
+
     params = {
-        "where": (
-            f"datetime IN [date'{start.strftime(DATE_FORMAT)}'..date'{end.strftime(DATE_FORMAT)}'] "
-            f"AND region='{region.value}'"
-        ),
+        "where": where,
         "timezone": timezone,
         "select": select_str,
     }
